@@ -1,0 +1,16 @@
+{
+  "name": "brume-ops",
+  "version": "1.0.0",
+  "description": "Brume Engine Operations Console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "echo 'Deploy to Vercel to run'"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.0"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
