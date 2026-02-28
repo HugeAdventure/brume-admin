@@ -1,52 +1,68 @@
 const ops = {
-    key: "",
+    activeInput: null, // Tracks which input opened the color picker
 
-    async login() {
-        const btn = document.getElementById('login-btn');
-        const msg = document.getElementById('auth-msg');
-        this.key = document.getElementById('root-key').value;
-        
-        btn.innerText = "Authenticating...";
-        msg.innerText = "";
-        
-        try {
-            const res = await this.req('stats');
-            if (res.error) {
-                msg.innerText = "Invalid Key";
-                btn.innerText = "Enter Dashboard";
-            } else {
-                document.getElementById('auth-layer').style.display = 'none';
-                document.getElementById('dashboard-layer').style.display = 'flex';
-                this.renderStats(res);
-            }
-        } catch (e) {
-            msg.innerText = "Connection Failed. Check Console.";
-            btn.innerText = "Enter Dashboard";
+    // --- BRUME STANDARDS ---
+    colors: [
+        { name: "Common", hex: "#FFFFFF" },
+        { name: "Uncommon", hex: "#55FF55" },
+        { name: "Rare", hex: "#55FFFF" },
+        { name: "Epic", hex: "#9D4EDD" },
+        { name: "Legendary", hex: "#FFAA00" },
+        { name: "Mythic", hex: "#FF55FF" },
+        { name: "Divine", hex: "#AA0000" },
+        { name: "Fennel", hex: "#51559B" }
+    ],
+
+    init() {
+        this.login(); // Or whatever init you have
+        this.renderColorGrid();
+        this.live(); // Initial render
+    },
+
+    // --- COLOR SYSTEM ---
+    renderColorGrid() {
+        const grid = document.getElementById('rarity-colors');
+        grid.innerHTML = this.colors.map(c => 
+            `<div class="color-btn" style="background:${c.hex}" data-name="${c.name}" onclick="ops.pickPreset('${c.hex}')"></div>`
+        ).join('');
+    },
+
+    openColor(inputId) {
+        this.activeInput = document.getElementById(inputId);
+        document.getElementById('color-modal').style.display = 'flex';
+        // Pre-fill
+        const current = this.activeInput.value;
+        if(current.startsWith('<#')) {
+            document.getElementById('manual-hex').value = current;
+            document.getElementById('native-picker').value = current.replace('<', '').replace('>', '');
         }
     },
 
-    // --- API & TABS (Same as before) ---
-    async req(mode, method = 'GET', body = null) {
-        const opts = { method, headers: { 'Content-Type': 'application/json', 'x-brume-secret': this.key } };
-        if (body) opts.body = JSON.stringify(body);
-        return await fetch(`/api/ops?mode=${mode}`, opts).then(r => r.json());
-    },
-    
-    tab(id) {
-        document.querySelectorAll('.panel').forEach(e => e.classList.remove('active'));
-        document.getElementById(`tab-${id}`).classList.add('active');
-        document.querySelectorAll('nav button').forEach(e => e.classList.remove('active'));
-        event.target.classList.add('active');
+    closeColor() { document.getElementById('color-modal').style.display = 'none'; },
+
+    pickPreset(hex) {
+        this.setInputColor(`<${hex}>`);
+        this.closeColor();
     },
 
-    // --- STATS & PLAYER (Same as before) ---
-    renderStats(data) { /* ... */ },
-    async lookup() { /* ... */ },
-    async savePlayer() { /* ... */ },
+    pickNative(hex) {
+        document.getElementById('manual-hex').value = `<${hex.toUpperCase()}>`;
+    },
 
-    // --- THE ITEM ARCHITECT ---
-    generate() {
-        // 1. Gather Data
+    applyColor() {
+        this.setInputColor(document.getElementById('manual-hex').value);
+        this.closeColor();
+    },
+
+    setInputColor(val) {
+        if (this.activeInput) {
+            this.activeInput.value = val;
+            this.live(); // Update preview instantly
+        }
+    },
+
+    // --- THE "LIVE" GENERATOR ---
+    live() {
         const d = {
             id: val('gen-id').toUpperCase(),
             mat: val('gen-mat'),
@@ -59,98 +75,122 @@ const ops = {
             ab_name: val('gen-ab-name'),
             ab_desc: val('gen-ab-desc'),
             flavor: val('gen-flavor'),
-            p1: val('gen-p1'), p2: val('gen-p2')
+            p1: val('gen-p1'), p2: val('gen-p2'),
+            enchants: document.getElementById('gen-enchants').checked
         };
 
-        // 2. Generate Skript Code
-        let code = `    if {_id} is "${d.id}":\n`;
-        code += `        if {_key} is "name": return "${d.name}"\n`;
-        code += `        if {_key} is "material": return ${d.mat}\n`;
-        code += `        if {_key} is "version": return 1\n`;
-        
-        // Stats
-        if(d.dmg) code += `        if {_key} is "damage": return ${d.dmg}\n`;
-        if(d.str) code += `        if {_key} is "strength": return ${d.str}\n`;
-        if(d.hp) code += `        if {_key} is "health": return ${d.hp}\n`;
-        if(d.def) code += `        if {_key} is "defense": return ${d.def}\n`;
-        if(d.spd) code += `        if {_key} is "speed": return ${d.spd}\n`;
-        
-        // Visuals
-        code += `        if {_key} is "tier": return "${d.tier}"\n`;
-        code += `        if {_key} is "type": return "${d.type}"\n`;
-        code += `        if {_key} is "p_primary": return "${d.p1}"\n`;
-        code += `        if {_key} is "p_secondary": return "${d.p2}"\n`;
-        
-        // Content
-        if(d.ab_name) code += `        if {_key} is "ab_name": return "${d.ab_name}"\n`;
-        if(d.ab_desc) code += `        if {_key} is "desc": return "${d.ab_desc}"\n`;
-        if(d.flavor) code += `        if {_key} is "flavor": return "${d.flavor}"\n`;
-        
-        document.getElementById('gen-out').value = code;
+        // Update Swatches
+        this.updateSwatches(d);
 
-        // 3. Update Preview
-        this.updatePreview(d);
+        // 1. GENERATE SKRIPT CODE (FIXED FORMATTING)
+        let c = `    if {_id} is "${d.id}":\n`;
+        c += `        if {_key} is "name":\n            return "${this.injectColor(d.name, d.p1)}"\n`;
+        c += `        if {_key} is "material":\n            return ${d.mat || "stone"}\n`;
+        c += `        if {_key} is "version":\n            return 1\n`;
+
+        // Helper for one-line returns
+        const addStat = (key, val) => {
+            if(val) c += `        if {_key} is "${key}":\n            return ${val}\n`;
+        };
+
+        addStat("damage", d.dmg);
+        addStat("strength", d.str);
+        addStat("health", d.hp);
+        addStat("defense", d.def);
+        addStat("speed", d.spd);
+        addStat("mining_speed", d.mspd);
+        addStat("mining_fortune", d.mfort);
+
+        c += `        if {_key} is "tier":\n            return "${d.tier}"\n`;
+        c += `        if {_key} is "type":\n            return "${d.type}"\n`;
+        c += `        if {_key} is "p_primary":\n            return "${d.p1}"\n`;
+        c += `        if {_key} is "p_secondary":\n            return "${d.p2}"\n`;
+
+        if(d.ab_name) c += `        if {_key} is "ab_name":\n            return "${d.ab_name}"\n`;
+        if(d.ab_desc) c += `        if {_key} is "desc":\n            return "${d.ab_desc}"\n`;
+        if(d.flavor) c += `        if {_key} is "flavor":\n            return "${d.flavor}"\n`;
+        if(d.enchants) c += `        if {_key} is "enchants":\n            return true\n`;
+
+        document.getElementById('gen-out').value = c;
+
+        // 2. UPDATE PREVIEW HTML
+        this.renderPreview(d);
     },
 
-    updatePreview(d) {
-        const nameEl = document.getElementById('prev-name');
-        const loreEl = document.getElementById('prev-lore');
+    updateSwatches(d) {
+        document.getElementById('swatch-name').style.background = this.parseHex(d.p1);
+        document.getElementById('swatch-p1').style.background = this.parseHex(d.p1);
+        document.getElementById('swatch-p2').style.background = this.parseHex(d.p2);
+        // If ability name has a color, find it, else default gold
+        document.getElementById('swatch-ab').style.background = "#FFAA00"; 
+    },
+
+    renderPreview(d) {
+        const lore = document.getElementById('prev-lore');
+        const name = document.getElementById('prev-name');
         
-        // Set Name
-        nameEl.innerHTML = this.formatColors(d.name || "Item Name");
+        // Name
+        const col1 = this.parseHex(d.p1);
+        const col2 = this.parseHex(d.p2);
         
-        // Build Lore HTML
-        let html = "";
+        name.innerHTML = `<span style="color:${col1}">${d.name || "Unknown Item"}</span>`;
+        
+        let h = "";
         
         // Stats
-        if(d.dmg) html += `<div><span style="color:#aaa">Damage:</span> <span style="color:#ff5555">+${d.dmg}</span></div>`;
-        if(d.str) html += `<div><span style="color:#aaa">Strength:</span> <span style="color:#ff5555">+${d.str}</span> <span style="color:#ffaa00">❁</span></div>`;
-        if(d.hp) html += `<div><span style="color:#aaa">Health:</span> <span style="color:#ff5555">+${d.hp}</span> <span style="color:#ff5555">❤</span></div>`;
-        if(d.def) html += `<div><span style="color:#aaa">Defense:</span> <span style="color:#55ff55">+${d.def}</span> <span style="color:#55ff55">🛡</span></div>`;
-        if(d.spd) html += `<div><span style="color:#aaa">Speed:</span> <span style="color:#f1c40f">+${d.spd}</span> <span style="color:#55ffff">⚡</span></div>`;
+        if(d.dmg) h += `<div><span style="color:#aaa">Damage:</span> <span style="color:#ff5555">+${d.dmg}</span></div>`;
+        if(d.str) h += `<div><span style="color:#aaa">Strength:</span> <span style="color:#ff5555">+${d.str}</span> <span style="color:#ffaa00">❁</span></div>`;
+        if(d.hp) h += `<div><span style="color:#aaa">Health:</span> <span style="color:#ff5555">+${d.hp}</span> <span style="color:#ff5555">❤</span></div>`;
+        if(d.def) h += `<div><span style="color:#aaa">Defense:</span> <span style="color:#55ff55">+${d.def}</span> <span style="color:#55ff55">🛡</span></div>`;
+        if(d.spd) h += `<div><span style="color:#aaa">Speed:</span> <span style="color:${col1}">+${d.spd}</span> <span style="color:#55ffff">⚡</span></div>`;
         
-        html += `<br>`;
+        h += `<br>`;
         
         // Ability
         if(d.ab_name) {
-            html += `<div><span style="color:#ffaa00">Ability: ${d.ab_name}</span> <span style="color:#aaa">RIGHT CLICK</span></div>`;
-            const lines = d.ab_desc.split('|');
-            lines.forEach(l => html += `<div style="color:#aaa">${this.formatColors(l)}</div>`);
-            html += `<br>`;
+            h += `<div><span style="color:#ffaa00">Ability: <span style="color:${col1}; font-weight:bold;">${d.ab_name}</span></span> <span style="color:#aaa">RIGHT CLICK</span></div>`;
+            d.ab_desc.split('|').forEach(l => h += `<div style="color:#aaa">${this.formatColors(l)}</div>`);
+            h += `<br>`;
+        }
+        
+        // Enchants
+        if(d.enchants) {
+            h += `<div><span style="color:#aaa">Enchantments:</span></div>`;
+            h += `<div><span style="color:#555">[ </span><span style="color:#aaa">Empty Enchantment Slot</span><span style="color:#555"> ]</span></div>`;
+            h += `<div><span style="color:#555">[ </span><span style="color:#aaa">Empty Enchantment Slot</span><span style="color:#555"> ]</span></div>`;
+            h += `<br>`;
         }
         
         // Flavor
         if(d.flavor) {
-            html += `<div style="color:#555; font-style:italic;">${d.flavor}</div>`;
-            html += `<br>`;
+            h += `<div style="color:#555; font-style:italic;">${d.flavor}</div>`;
+            h += `<br>`;
         }
         
         // Footer
-        const p1 = this.hexToRgb(d.p1) || "255,255,255";
-        const p2 = this.hexToRgb(d.p2) || "170,170,170";
-        
-        html += `<div style="font-weight:bold;">
-            <span style="color:${d.p1}">${d.tier}</span> 
-            <span style="color:${d.p2}">✦</span> 
-            <span style="color:${d.p1}">${d.type}</span>
+        h += `<div style="font-weight:bold;">
+            <span style="color:${col1}">${d.tier}</span> <span style="color:${col2}">✦</span> <span style="color:${col1}">${d.type}</span>
         </div>`;
-
-        loreEl.innerHTML = html;
+        
+        lore.innerHTML = h;
     },
     
-    // Simple color parser for preview
-    formatColors(text) {
+    // Helpers
+    injectColor(text, hex) {
         if(!text) return "";
-        // Replace &c with span, Replace <#hex> with span
-        text = text.replace(/&([0-9a-f])/g, '<span class="c-$1">');
-        // Very basic Hex replacement for preview purposes
-        text = text.replace(/<#(.*?)>/g, '<span style="color:#$1">');
-        return text;
+        if(text.includes("<#")) return text;
+        return hex + text;
     },
     
-    hexToRgb(hex) {
-        // Basic check just to pass color to style
-        return hex ? hex.replace('<', '').replace('>', '') : null;
+    parseHex(val) {
+        if(!val) return "#ffffff";
+        return val.replace('<', '').replace('>', '');
+    },
+
+    formatColors(t) {
+        // Basic parser for preview
+        if(!t) return "";
+        return t.replace(/&([0-9a-f])/g, '').replace(/<#(.*?)>/g, '<span style="color:#$1">');
     }
 };
 
