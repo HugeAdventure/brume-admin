@@ -14,11 +14,13 @@
     <!-- COLOR MODAL -->
     <div id="color-modal" class="modal-layer" style="display:none;" onclick="if(event.target===this) ops.closeColor()">
         <div class="modal-card">
-            <h3>Select Palette</h3>
-            <div class="color-grid" id="rarity-colors"></div>
-            <div class="picker-row" style="display: flex; gap: 10px;">
+            <h3>Color Studio</h3>
+            <div class="color-grid" id="rarity-colors"></div> <!-- JS injects buttons here -->
+            
+            <div class="picker-row" style="margin-top:20px; display:flex; gap:10px;">
+                <input type="color" id="native-picker" oninput="ops.pickNative(this.value)" style="height:40px; width:50px; padding:0;">
                 <input type="text" id="manual-hex" placeholder="<#FFFFFF>">
-                <button class="action-btn" style="background:var(--accent); color:white; border:none;" onclick="ops.applyColor()">Set</button>
+                <button onclick="ops.applyColor()" style="background:var(--accent); border:none; color:white; border-radius:4px; font-weight:bold;">APPLY</button>
             </div>
         </div>
     </div>
