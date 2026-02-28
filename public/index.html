@@ -3,80 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <title>Brume Operations</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
+    <!-- CSS Link -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- COLOR PICKER MODAL -->
+    <!-- COLOR MODAL -->
     <div id="color-modal" class="modal-layer" style="display:none;" onclick="if(event.target===this) ops.closeColor()">
         <div class="modal-card">
-            <h3>Select Color</h3>
-            <div class="color-grid" id="rarity-colors">
-                <!-- Injected by JS -->
-            </div>
-            <div class="picker-row">
-                <input type="color" id="native-picker" oninput="ops.pickNative(this.value)">
+            <h3>Select Palette</h3>
+            <div class="color-grid" id="rarity-colors"></div>
+            <div class="picker-row" style="display: flex; gap: 10px;">
                 <input type="text" id="manual-hex" placeholder="<#FFFFFF>">
-                <button onclick="ops.applyColor()">APPLY</button>
+                <button class="action-btn" style="background:var(--accent); color:white; border:none;" onclick="ops.applyColor()">Set</button>
             </div>
         </div>
     </div>
 
-    <!-- MAIN DASHBOARD -->
+    <!-- MAIN UI -->
     <div id="dashboard-layer">
-        
         <aside>
             <div class="sidebar-header">
                 <h2>BRUME</h2>
-                <div class="connection-status"><span class="dot"></span> Connected</div>
+                <div class="connection-status"><span class="dot"></span> Online</div>
             </div>
-            
             <nav>
-                <button onclick="ops.tab('overview')">Overview</button>
-                <button onclick="ops.tab('player')">Player Manager</button>
                 <button class="active" onclick="ops.tab('generator')">Item Architect</button>
-                <button onclick="ops.tab('tools')">Dev Tools</button>
+                <button onclick="ops.tab('player')">Player Manager</button>
+                <button onclick="ops.tab('overview')">Overview</button>
             </nav>
-            
             <button class="logout-btn" onclick="location.reload()">Log Out</button>
         </aside>
 
         <main>
-            <!-- (Overview and Player tabs remain the same...) -->
-
-            <!-- VIEW: ITEM ARCHITECT -->
+            <!-- ITEM GENERATOR TAB -->
             <div id="tab-generator" class="panel active">
                 <div class="panel-header">
                     <h1>Item Architect</h1>
                     <div class="actions">
-                        <button class="action-btn" onclick="ops.resetGen()">Clear</button>
-                        <button class="action-btn primary" onclick="ops.copyCode()">Copy Code</button>
+                        <button class="action-btn" onclick="ops.resetGen()">Reset</button>
                     </div>
                 </div>
 
                 <div class="architect-layout">
-                    
+                    <!-- FORM -->
                     <div class="architect-form">
-                        <h3>Core Data</h3>
+                        <h3>Identity</h3>
                         <div class="form-row">
-                            <input type="text" id="gen-id" placeholder="ID (e.g. GALE_HELMET)" oninput="ops.live()">
-                            <input type="text" id="gen-mat" placeholder="Material (e.g. leather helmet)" oninput="ops.live()">
+                            <input type="text" id="gen-id" placeholder="ID (e.g. VOID_SWORD)" oninput="ops.live()">
+                            <input type="text" id="gen-mat" placeholder="Material (e.g. iron sword)" oninput="ops.live()">
                         </div>
                         
-                        <!-- Name with Color Picker -->
                         <div class="color-input-group">
-                            <div class="swatch" id="swatch-name" onclick="ops.openColor('gen-name')"></div>
-                            <input type="text" id="gen-name" placeholder="Display Name" oninput="ops.live()">
+                            <div class="swatch" id="swatch-name" style="background:#fff" onclick="ops.openColor('gen-name')"></div>
+                            <input type="text" id="gen-name" placeholder="Item Name" oninput="ops.live()">
                         </div>
 
                         <div class="form-row">
                             <select id="gen-tier" onchange="ops.live()">
                                 <option value="COMMON">Common</option>
-                                <option value="UNCOMMON">Uncommon</option>
                                 <option value="RARE">Rare</option>
-                                <option value="EPIC">Epic</option>
                                 <option value="LEGENDARY">Legendary</option>
                                 <option value="MYTHIC">Mythic</option>
                                 <option value="EXCLUSIVE">Exclusive</option>
@@ -86,10 +75,9 @@
                                 <option value="ARMOR">Armor</option>
                                 <option value="TOOL">Tool</option>
                                 <option value="MATERIAL">Material</option>
-                                <option value="ACCESSORY">Accessory</option>
                             </select>
                         </div>
-                        
+
                         <h3>Stats</h3>
                         <div class="form-row three">
                             <input type="number" id="gen-dmg" placeholder="Damage" oninput="ops.live()">
@@ -106,56 +94,52 @@
                             <input type="number" id="gen-mfort" placeholder="Mining Fortune" oninput="ops.live()">
                         </div>
 
-                        <h3>Ability & Lore</h3>
+                        <h3>Content</h3>
                         <div class="color-input-group">
-                            <div class="swatch" id="swatch-ab" onclick="ops.openColor('gen-ab-name')"></div>
+                            <div class="swatch" id="swatch-ab" style="background:#FFAA00" onclick="ops.openColor('gen-ab-name')"></div>
                             <input type="text" id="gen-ab-name" placeholder="Ability Name" oninput="ops.live()">
                         </div>
-                        <textarea id="gen-ab-desc" placeholder="Ability Description (Use | for lines)" oninput="ops.live()"></textarea>
+                        <textarea id="gen-ab-desc" placeholder="Description (Use | for new lines)" oninput="ops.live()"></textarea>
                         <textarea id="gen-flavor" placeholder="Flavor Text" oninput="ops.live()"></textarea>
-                        
-                        <h3>Palette</h3>
+
+                        <h3>Color Palette</h3>
                         <div class="form-row">
                             <div class="color-input-group">
-                                <div class="swatch" id="swatch-p1" onclick="ops.openColor('gen-p1')"></div>
-                                <input type="text" id="gen-p1" value="<#87CEEB>" placeholder="Primary" oninput="ops.live()">
+                                <div class="swatch" id="swatch-p1" style="background:#fff" onclick="ops.openColor('gen-p1')"></div>
+                                <input type="text" id="gen-p1" value="<#FFFFFF>" placeholder="Primary" oninput="ops.live()">
                             </div>
                             <div class="color-input-group">
-                                <div class="swatch" id="swatch-p2" onclick="ops.openColor('gen-p2')"></div>
-                                <input type="text" id="gen-p2" value="<#0091D5>" placeholder="Secondary" oninput="ops.live()">
+                                <div class="swatch" id="swatch-p2" style="background:#777" onclick="ops.openColor('gen-p2')"></div>
+                                <input type="text" id="gen-p2" value="<#777777>" placeholder="Secondary" oninput="ops.live()">
                             </div>
                         </div>
                         
-                        <div class="checkbox-row">
-                            <input type="checkbox" id="gen-enchants" onchange="ops.live()" checked>
-                            <label for="gen-enchants">Has Enchant Slots</label>
+                        <div style="margin-top:10px;">
+                            <input type="checkbox" id="gen-enchants" onchange="ops.live()" checked> 
+                            <label for="gen-enchants">Has Enchants</label>
                         </div>
                     </div>
 
-                    <!-- PREVIEW & CODE -->
+                    <!-- PREVIEW -->
                     <div class="architect-output">
+                        <h3>Preview</h3>
                         <div id="tooltip-preview" class="minecraft-tooltip">
                             <div class="mc-name" id="prev-name">Item Name</div>
                             <div class="mc-lore" id="prev-lore"></div>
                         </div>
 
+                        <h3>Code</h3>
                         <div class="code-container">
-                            <div class="code-header">SKRIPT OUTPUT</div>
+                            <div class="code-header">SKRIPT</div>
                             <textarea id="gen-out" readonly onclick="this.select()"></textarea>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- VIEW: TOOLS -->
-            <div id="tab-tools" class="panel">
-                <h1>Developer Tools</h1>
-                <div class="tool-card">
-                    <h3>Hex Color Picker</h3>
-                    <input type="color" id="tool-color" oninput="document.getElementById('tool-hex').value = '<' + this.value + '>'">
-                    <input type="text" id="tool-hex" value="<#000000>">
-                </div>
-            </div>
+            <!-- OTHER TABS (Hidden) -->
+            <div id="tab-overview" class="panel"><h1>Overview</h1></div>
+            <div id="tab-player" class="panel"><h1>Player Manager</h1></div>
 
         </main>
     </div>
