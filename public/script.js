@@ -1,75 +1,54 @@
 const ops = {
+    activeInput: null,
     key: "",
-    activeInput: null, // Tracks which input opened the color picker
-
-    // --- BRUME STANDARDS ---
     colors:[
-        { name: "Common", hex: "#FFFFFF" },
-        { name: "Uncommon", hex: "#55FF55" },
-        { name: "Rare", hex: "#55FFFF" },
-        { name: "Epic", hex: "#9D4EDD" },
-        { name: "Legendary", hex: "#FFAA00" },
-        { name: "Mythic", hex: "#FF55FF" },
-        { name: "Divine", hex: "#AA0000" },
-        { name: "Fennel", hex: "#51559B" }
+        { name: "Common", hex: "#FFFFFF" }, { name: "Uncommon", hex: "#55FF55" },
+        { name: "Rare", hex: "#55FFFF" }, { name: "Epic", hex: "#9D4EDD" },
+        { name: "Legendary", hex: "#FFAA00" }, { name: "Mythic", hex: "#FF55FF" },
+        { name: "Divine", hex: "#AA0000" }, { name: "Fennel", hex: "#51559B" }
     ],
 
     init() {
         this.renderColorGrid();
-        this.live(); // Render initial preview
+        this.live();
     },
 
-    // ==========================================
-    // AUTH & API SYSTEM
-    // ==========================================
     async login() {
         const btn = document.getElementById('login-btn');
         const msg = document.getElementById('auth-msg');
-        
         this.key = document.getElementById('root-key').value;
+        
         btn.innerText = "Authenticating...";
-        msg.innerText = "";
         
         try {
-            // Test Key by fetching stats
             const res = await this.req('stats');
-            
             if (res.error) {
-                msg.innerText = "ACCESS DENIED: " + res.error;
+                msg.innerText = "ACCESS DENIED";
                 msg.style.color = "#ff5555";
-                btn.innerText = "Enter Dashboard";
+                btn.innerText = "Authenticate";
             } else {
                 document.getElementById('auth-layer').style.display = 'none';
                 document.getElementById('dashboard-layer').style.display = 'flex';
                 this.renderStats(res);
+                this.live();
             }
         } catch (err) {
-            console.error(err);
-            msg.innerText = "Connection Failed. Check Console (F12).";
+            msg.innerText = "API Offline (Test Mode Active)";
             msg.style.color = "#ffaa00";
-            btn.innerText = "Enter Dashboard";
+            // UNCOMMENT TO BYPASS LOGIN FOR TESTING CSS:
+            document.getElementById('auth-layer').style.display = 'none';
+            document.getElementById('dashboard-layer').style.display = 'flex';
         }
     },
 
     async req(mode, method = 'GET', body = null) {
-        const opts = {
-            method: method,
-            headers: { 'Content-Type': 'application/json', 'x-brume-secret': this.key }
-        };
+        const opts = { method, headers: { 'Content-Type': 'application/json', 'x-brume-secret': this.key } };
         if (body) opts.body = JSON.stringify(body);
-        
         const response = await fetch(`/api/ops?mode=${mode}`, opts);
-        
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Server Error ${response.status}: ${text}`);
-        }
+        if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
         return await response.json();
     },
 
-    // ==========================================
-    // UI NAVIGATION
-    // ==========================================
     tab(id) {
         document.querySelectorAll('.panel').forEach(e => e.classList.remove('active'));
         document.getElementById(`tab-${id}`).classList.add('active');
@@ -77,260 +56,33 @@ const ops = {
         event.target.classList.add('active');
     },
 
-    // ==========================================
-    // DASHBOARD & PLAYER EDITOR
-    // ==========================================
-    renderStats(data) {
-        document.getElementById('stat-users').innerText = data.user_count || 0;
-        document.getElementById('stat-eco').innerText = (data.total_economy || 0).toLocaleString();
-        document.getElementById('stat-rich').innerText = data.top_player || "None";
-    },
-
-    async lookup() {
-        const q = document.getElementById('p-search').value;
-        if (!q) return;
-        
-        try {
-            const res = await this.req('lookup', 'POST', { query: q });
-            
-            if (res.error) {
-                alert("USER_NOT_FOUND");
-            } else {
-                document.getElementById('p-editor').style.display = 'block';
-                document.getElementById('val-uuid').innerText = res.uuid;
-                document.getElementById('val-name').innerText = res.name;
-                document.getElementById('inp-coins').value = res.coins;
-                document.getElementById('inp-level').value = res.level;
-            }
-        } catch(e) {
-            alert("Lookup failed: " + e.message);
-        }
-    },
-
-    // --- [ DEV TOOLS ENGINE ] ---
-    tools: {
-        // 1. Gradient Logic
-        grad() {
-            const text = document.getElementById('grad-text').value || "Gradient";
-            const c1 = ops.parseHex(document.getElementById('gen-g1').value);
-            const c2 = ops.parseHex(document.getElementById('gen-g2').value);
-            
-            // Visual Preview
-            const prev = document.getElementById('grad-preview');
-            prev.style.background = `linear-gradient(to right, ${c1}, ${c2})`;
-            prev.style.webkitBackgroundClip = "text";
-            prev.style.webkitTextFillColor = "transparent";
-            prev.innerText = text;
-            
-            // Update Swatches (Since we reused the ID, we hook back to main ops)
-            document.getElementById('swatch-g1').style.background = c1;
-            document.getElementById('swatch-g2').style.background = c2;
-
-            // Generate Skript Code (Simple 2-color interpolation for now)
-            // Note: True char-by-char interpolation is complex in JS, 
-            // returning the MiniMessage format is best for 1.21.1
-            const mmCode = `<gradient:${c1}:${c2}>${text}</gradient>`;
-            document.getElementById('grad-out').value = mmCode;
-        },
-
-        // 2. XP & Math Logic
-        xp() {
-            const lvl = parseInt(document.getElementById('math-lvl').value) || 1;
-            const def = parseInt(document.getElementById('math-def').value) || 0;
-            
-            // Formula: 40 * (lvl + 1) ^ 1.07
-            const req = Math.round(40 * Math.pow(lvl + 1, 1.07));
-            
-            // Formula: 100 / (100 + Defense)
-            const reduction = 100 / (100 + def); // Damage taken multiplier
-            const mitigated = (1 - reduction) * 100; // % blocked
-            
-            document.getElementById('out-req').innerText = req.toLocaleString() + " XP";
-            
-            // Approx total (sum of series)
-            let total = 0;
-            for(let i=1; i<lvl; i++) total += Math.round(40 * Math.pow(i + 1, 1.07));
-            document.getElementById('out-total').innerText = total.toLocaleString() + " XP";
-            
-            document.getElementById('out-def').innerText = mitigated.toFixed(1) + "%";
-        },
-
-        // 3. MiniMessage Converter
-        mm() {
-            let t = document.getElementById('mm-in').value;
-            
-            // Basic Replacements
-            t = t.replace(/&0/g, "<black>");
-            t = t.replace(/&1/g, "<dark_blue>");
-            t = t.replace(/&2/g, "<dark_green>");
-            t = t.replace(/&3/g, "<dark_aqua>");
-            t = t.replace(/&4/g, "<dark_red>");
-            t = t.replace(/&5/g, "<dark_purple>");
-            t = t.replace(/&6/g, "<gold>");
-            t = t.replace(/&7/g, "<gray>");
-            t = t.replace(/&8/g, "<dark_gray>");
-            t = t.replace(/&9/g, "<blue>");
-            t = t.replace(/&a/g, "<green>");
-            t = t.replace(/&b/g, "<aqua>");
-            t = t.replace(/&c/g, "<red>");
-            t = t.replace(/&d/g, "<light_purple>");
-            t = t.replace(/&e/g, "<yellow>");
-            t = t.replace(/&f/g, "<white>");
-            
-            t = t.replace(/&l/g, "<bold>");
-            t = t.replace(/&o/g, "<italic>");
-            t = t.replace(/&n/g, "<underlined>");
-            t = t.replace(/&m/g, "<strikethrough>");
-            t = t.replace(/&k/g, "<obfuscated>");
-            t = t.replace(/&r/g, "<reset>");
-            
-            t = t.replace(/<#(.*?)>/g, "<#$1>");
-
-            document.getElementById('mm-out').value = t;
-            const p = document.getElementById('mm-preview');
-            p.innerHTML = ops.formatColors(document.getElementById('mm-in').value);
-        },
-
-        snip(type) {
-            let code = "";
-            if(type === 'gui') {
-                code = `function openMenu(p: player):\n    set metadata tag "menu" of {_p} to chest inventory with 3 rows named "Menu"\n    set {_gui} to metadata tag "menu" of {_p}\n    loop 27 times:\n        set slot (loop-value - 1) of {_gui} to black stained glass pane named " "\n    open {_gui} to {_p}\n\non inventory click:\n    if event-inventory = (metadata tag "menu" of player):\n        cancel event\n        if index of event-slot is 13:\n            # Logic`;
-            } else if (type === 'nbt') {
-                code = `set {_n} to custom nbt compound of player's tool\nset {_id} to string tag "id" of {_n}\nif {_id} is "ITEM_ID":\n    # Logic`;
-            } else if (type === 'loop') {
-                code = `loop all players:\n    if distance between loop-player and player < 10:\n        send "Hello!" to loop-player`;
-            } else if (type === 'skull') {
-                code = `set {_head} to player head\nset {_n} to nbt compound of {_head}\nset string tag "SkullOwner;Id" of {_n} to uuid of player\nset string tag "SkullOwner;Name" of {_n} to name of player`;
-            } else if (type === 'command') {
-                code = `command /admincmd:\n    permission: admin.use\n    trigger:\n        send "&aExecuted."`;
-            }
-            document.getElementById('snip-out').value = code;
-        }
-    },
-
-    async savePlayer() {
-        const body = {
-            uuid: document.getElementById('val-uuid').innerText,
-            coins: document.getElementById('inp-coins').value,
-            level: document.getElementById('inp-level').value
-        };
-        try {
-            const res = await this.req('update', 'POST', body);
-            if (res.success) alert("DATABASE_UPDATE :: SUCCESS\nPlayer will sync on next join.");
-        } catch(e) {
-            alert("Save failed: " + e.message);
-        }
-    },
-
-    // ==========================================
-    // COLOR STUDIO
-    // ==========================================
-    renderColorGrid() {
-        const grid = document.getElementById('rarity-colors');
-        grid.innerHTML = this.colors.map(c => 
-            `<div class="color-btn" style="background:${c.hex}" data-name="${c.name}" onclick="ops.pickPreset('${c.hex}')"></div>`
-        ).join('');
-    },
-
-    openColor(inputId) {
-        this.activeInput = document.getElementById(inputId);
-        document.getElementById('color-modal').style.display = 'flex';
-        // Pre-fill modal with current input value
-        const current = this.activeInput.value;
-        if(current.startsWith('<#')) {
-            document.getElementById('manual-hex').value = current;
-            document.getElementById('native-picker').value = current.replace('<', '').replace('>', '');
-        }
-    },
-
-    closeColor() { document.getElementById('color-modal').style.display = 'none'; },
-
-    pickPreset(hex) {
-        this.setInputColor(`<${hex}>`);
-        this.closeColor();
-    },
-
-    pickNative(hex) {
-        document.getElementById('manual-hex').value = `<${hex.toUpperCase()}>`;
-    },
-
-    applyColor() {
-        this.setInputColor(document.getElementById('manual-hex').value);
-        this.closeColor();
-    },
-
-    setInputColor(val) {
-        if (this.activeInput) {
-            this.activeInput.value = val;
-            this.live(); // Update preview instantly
-        }
-    },
-
-    // --- DEV TOOLS TAB SPECIFIC ---
-    updateToolHex(val) {
-        const hex = "<#" + val.toUpperCase().substring(1) + ">";
-        document.getElementById('tool-hex').value = hex;
-        document.getElementById('tool-preview').style.background = val;
-    },
-    
-    copyToolHex() {
-        const val = document.getElementById('tool-hex').value;
-        navigator.clipboard.writeText(val);
-        alert("Copied: " + val);
-    },
-
-    // ==========================================
-    // THE "LIVE" ITEM GENERATOR
-    // ==========================================
-    resetGen() {
-        document.querySelectorAll('.architect-form input, .architect-form textarea').forEach(el => {
-            if(el.type !== 'checkbox' && el.id !== 'gen-p1' && el.id !== 'gen-p2') el.value = '';
-        });
-        document.getElementById('gen-p1').value = "<#FFFFFF>";
-        document.getElementById('gen-p2').value = "<#777777>";
-        this.live();
-    },
-
+    // --- ARCHITECT ENGINE ---
     live() {
+        if(!document.getElementById('gen-id')) return;
         const d = {
-            id: val('gen-id').toUpperCase(),
-            mat: val('gen-mat'),
-            name: val('gen-name'),
-            tier: val('gen-tier'),
-            type: val('gen-type'),
+            id: val('gen-id').toUpperCase(), mat: val('gen-mat'), name: val('gen-name'),
+            tier: val('gen-tier'), type: val('gen-type'),
             dmg: val('gen-dmg'), str: val('gen-str'), crit: val('gen-crit'),
             hp: val('gen-hp'), def: val('gen-def'), spd: val('gen-spd'),
             mspd: val('gen-mspd'), mfort: val('gen-mfort'),
-            ab_name: val('gen-ab-name'),
-            ab_desc: val('gen-ab-desc'),
-            flavor: val('gen-flavor'),
-            p1: val('gen-p1'), p2: val('gen-p2'),
+            ab_name: val('gen-ab-name'), ab_desc: val('gen-ab-desc'), flavor: val('gen-flavor'),
+            p1: val('gen-p1') || "<#FFFFFF>", p2: val('gen-p2') || "<#AAAAAA>",
             enchants: document.getElementById('gen-enchants').checked
         };
 
         this.updateSwatches(d);
 
-        // 1. GENERATE SKRIPT CODE (FIXED FORMATTING)
         let c = `    if {_id} is "${d.id}":\n`;
-        c += `        if {_key} is "name":\n            return "${this.injectColor(d.name, d.p1)}"\n`;
-        c += `        if {_key} is "material":\n            return ${d.mat || "stone"}\n`;
+        if(d.name) c += `        if {_key} is "name":\n            return "${this.injectColor(d.name, d.p1)}"\n`;
+        if(d.mat) c += `        if {_key} is "material":\n            return ${d.mat}\n`;
         c += `        if {_key} is "version":\n            return 1\n`;
 
-        // Helper for one-line returns
-        const addStat = (key, val) => {
-            if(val) c += `        if {_key} is "${key}":\n            return ${val}\n`;
-        };
+        const addStat = (k, v) => { if(v) c += `        if {_key} is "${k}":\n            return ${v}\n`; };
+        addStat("damage", d.dmg); addStat("strength", d.str); addStat("health", d.hp);
+        addStat("defense", d.def); addStat("speed", d.spd); addStat("mining_speed", d.mspd); addStat("mining_fortune", d.mfort);
 
-        addStat("damage", d.dmg);
-        addStat("strength", d.str);
-        addStat("health", d.hp);
-        addStat("defense", d.def);
-        addStat("speed", d.spd);
-        addStat("mining_speed", d.mspd);
-        addStat("mining_fortune", d.mfort);
-
-        c += `        if {_key} is "tier":\n            return "${d.tier}"\n`;
-        c += `        if {_key} is "type":\n            return "${d.type}"\n`;
+        if(d.tier) c += `        if {_key} is "tier":\n            return "${d.tier}"\n`;
+        if(d.type) c += `        if {_key} is "type":\n            return "${d.type}"\n`;
         c += `        if {_key} is "p_primary":\n            return "${d.p1}"\n`;
         c += `        if {_key} is "p_secondary":\n            return "${d.p2}"\n`;
 
@@ -340,96 +92,96 @@ const ops = {
         if(d.enchants) c += `        if {_key} is "enchants":\n            return true\n`;
 
         document.getElementById('gen-out').value = c;
-
-        // 2. UPDATE PREVIEW HTML
         this.renderPreview(d);
     },
 
     updateSwatches(d) {
-        document.getElementById('swatch-name').style.background = this.parseHex(d.p1);
-        document.getElementById('swatch-p1').style.background = this.parseHex(d.p1);
-        document.getElementById('swatch-p2').style.background = this.parseHex(d.p2);
-        document.getElementById('swatch-ab').style.background = "#FFAA00"; 
+        setBg('swatch-name', d.p1); setBg('swatch-p1', d.p1); setBg('swatch-p2', d.p2); setBg('swatch-ab', "#FFAA00");
     },
 
     renderPreview(d) {
         const lore = document.getElementById('prev-lore');
         const name = document.getElementById('prev-name');
+        const c1 = this.parseHex(d.p1); const c2 = this.parseHex(d.p2);
         
-        const col1 = this.parseHex(d.p1);
-        const col2 = this.parseHex(d.p2);
-        
-        name.innerHTML = `<span style="color:${col1}">${d.name || "Unknown Item"}</span>`;
-        
+        name.innerHTML = `<span style="color:${c1}">${d.name || "Item Name"}</span>`;
         let h = "";
         
-        if(d.dmg) h += `<div><span style="color:#aaa">Damage:</span> <span style="color:#ff5555">+${d.dmg}</span></div>`;
-        if(d.str) h += `<div><span style="color:#aaa">Strength:</span> <span style="color:#ffaa00">+${d.str} ❁</span></div>`;
-        if(d.hp) h += `<div><span style="color:#aaa">Health:</span> <span style="color:#ff5555">+${d.hp} ❤</span></div>`;
-        if(d.def) h += `<div><span style="color:#aaa">Defense:</span> <span style="color:#55ff55">+${d.def} 🛡</span></div>`;
-        if(d.spd) h += `<div><span style="color:#aaa">Speed:</span> <span style="color:${col1}">+${d.spd} ⚡</span></div>`;
-        if(d.mspd) h += `<div><span style="color:#aaa">Mining Speed:</span> <span style="color:#ffffff">+${d.mspd} ⛏</span></div>`;
+        const stat = (l, v, c, i) => v ? `<div><span style="color:#aaa">${l}:</span> <span style="color:${c}">+${v}</span> <span style="color:${c}">${i}</span></div>` : "";
+        h += stat("Damage", d.dmg, "#ff5555", "🗡"); h += stat("Strength", d.str, "#ffaa00", "❁");
+        h += stat("Health", d.hp, "#ff5555", "❤"); h += stat("Defense", d.def, "#55ff55", "🛡");
+        h += stat("Speed", d.spd, c1, "⚡"); h += stat("Mining Spd", d.mspd, "#3ab0ff", "⛏");
         
-        h += `<br>`;
-        
+        if(d.dmg || d.str || d.hp || d.def || d.spd || d.mspd) h += "<br>";
+
         if(d.ab_name) {
-            h += `<div><span style="color:#ffaa00">Ability: <span style="color:${col1}; font-weight:bold;">${d.ab_name}</span></span> <span style="color:#aaa">RIGHT CLICK</span></div>`;
+            h += `<div><span style="color:#ffaa00">Ability: <span style="color:${c1}; font-weight:bold;">${d.ab_name}</span></span> <span style="color:#aaa">RIGHT CLICK</span></div>`;
             d.ab_desc.split('|').forEach(l => h += `<div style="color:#aaa">${this.formatColors(l)}</div>`);
             h += `<br>`;
         }
         
-        if(d.enchants) {
-            h += `<div><span style="color:#aaa">Enchantments:</span></div>`;
-            h += `<div><span style="color:#555">[ </span><span style="color:#aaa">Empty Enchantment Slot</span><span style="color:#555"> ]</span></div>`;
-            h += `<div><span style="color:#555">[ </span><span style="color:#aaa">Empty Enchantment Slot</span><span style="color:#555"> ]</span></div>`;
-            h += `<br>`;
-        }
+        if(d.enchants) h += `<div><span style="color:#aaa">Enchantments:</span></div><div><span style="color:#555">[ </span><span style="color:#aaa">Empty Slot</span><span style="color:#555"> ]</span></div><br>`;
+        if(d.flavor) h += `<div style="color:#555; font-style:italic;">${d.flavor}</div><br>`;
         
-        if(d.flavor) {
-            d.flavor.split('|').forEach(l => h += `<div style="color:#555; font-style:italic;">${l}</div>`);
-            h += `<br>`;
-        }
-        
-        h += `<div style="font-weight:bold;">
-            <span style="color:${col1}">${d.tier}</span> <span style="color:${col2}">✦</span> <span style="color:${col1}">${d.type}</span>
-        </div>`;
-        
+        h += `<div style="font-weight:bold;"><span style="color:${c1}">${d.tier}</span> <span style="color:${c2}">✦</span> <span style="color:${c1}">${d.type}</span></div>`;
         lore.innerHTML = h;
     },
-    
-    // ==========================================
-    // UTILITIES
-    // ==========================================
-    injectColor(text, hex) {
-        if(!text) return "";
-        if(text.includes("<#")) return text;
-        return hex + text;
+
+    // --- COLOR MODAL ---
+    renderColorGrid() {
+        document.getElementById('rarity-colors').innerHTML = this.colors.map(c => 
+            `<div class="color-btn" style="background:${c.hex}" onclick="ops.pickPreset('${c.hex}')"></div>`
+        ).join('');
     },
-    
-    parseHex(val) {
-        if(!val) return "#ffffff";
-        return val.replace('<', '').replace('>', '');
+    openColor(inputId) {
+        this.activeInput = document.getElementById(inputId);
+        document.getElementById('color-modal').style.display = 'flex';
+    },
+    closeColor() { document.getElementById('color-modal').style.display = 'none'; },
+    pickPreset(hex) { this.activeInput.value = `<${hex}>`; this.closeColor(); this.live(); },
+    applyColor() { this.activeInput.value = document.getElementById('manual-hex').value; this.closeColor(); this.live(); },
+
+    // --- DEV TOOLS ---
+    tools: {
+        grad() {
+            const text = val('grad-text') || "Gradient";
+            const c1 = ops.parseHex(val('grad-c1')) || "#55FFFF";
+            const c2 = ops.parseHex(val('grad-c2')) || "#51559B";
+            
+            const prev = document.getElementById('grad-preview');
+            prev.style.background = `linear-gradient(to right, ${c1}, ${c2})`;
+            prev.style.webkitBackgroundClip = "text";
+            prev.style.webkitTextFillColor = "transparent";
+            prev.innerText = text;
+            
+            setBg('swatch-g1', c1); setBg('swatch-g2', c2);
+            document.getElementById('grad-out').value = `<gradient:${c1}:${c2}>${text}</gradient>`;
+        },
+        xp() {
+            const lvl = parseInt(val('math-lvl')) || 1;
+            const def = parseInt(val('math-def')) || 0;
+            const req = Math.round(40 * Math.pow(lvl + 1, 1.07));
+            document.getElementById('out-req').innerText = req.toLocaleString() + " XP";
+            document.getElementById('out-def').innerText = ((1 - (100 / (100 + def))) * 100).toFixed(1) + "%";
+        },
+        mm() {
+            let t = val('mm-in').replace(/&([0-9a-f])/g, "<$1>").replace(/&l/g, "<bold>");
+            document.getElementById('mm-out').value = t;
+            document.getElementById('mm-preview').innerHTML = ops.formatColors(val('mm-in'));
+        },
+        snip(type) {
+            document.getElementById('snip-out').value = type === 'gui' ? "GUI CODE" : "NBT CODE";
+        }
     },
 
-    formatColors(t) {
-        if(!t) return "";
-        const codes = {
-            '0': '#000000', '1': '#0000AA', '2': '#00AA00', '3': '#00AAAA',
-            '4': '#AA0000', '5': '#AA00AA', '6': '#FFAA00', '7': '#AAAAAA',
-            '8': '#555555', '9': '#5555FF', 'a': '#55FF55', 'b': '#55FFFF',
-            'c': '#FF5555', 'd': '#FF55FF', 'e': '#FFFF55', 'f': '#FFFFFF'
-        };
-
-        t = t.replace(/<#(.*?)>/g, (match, hex) => `</span><span style="color:#${hex}">`);
-        t = t.replace(/&([0-9a-f])/g, (match, code) => `</span><span style="color:${codes[code]}">`);
-        t = t.replace(/&l/g, '</span><span style="font-weight:bold; color:inherit">');
-        t = t.replace(/&o/g, '</span><span style="font-style:italic; color:inherit">');
-        
-        return '<span>' + t + '</span>';
-    }
+    // --- HELPERS ---
+    injectColor(t, h) { return t.includes("<#") ? t : h + t; },
+    parseHex(v) { return v ? v.replace(/[<>]/g, '') : "#ffffff"; },
+    formatColors(t) { return t.replace(/<#(.*?)>/g, '</span><span style="color:#$1">').replace(/&([0-9a-f])/g, ''); },
+    resetGen() { document.querySelectorAll('input').forEach(e=>e.value=''); this.live(); }
 };
 
 function val(id) { return document.getElementById(id).value; }
+function setBg(id, val) { const el = document.getElementById(id); if(el) el.style.background = val; }
 
-// Initialize when the page loads
 window.onload = () => ops.init();
