@@ -3,10 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Brume Operations</title>
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
-    <!-- CSS Link -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,34 +12,70 @@
     <!-- COLOR MODAL -->
     <div id="color-modal" class="modal-layer" style="display:none;" onclick="if(event.target===this) ops.closeColor()">
         <div class="modal-card">
-            <h3>Color Studio</h3>
-            <div class="color-grid" id="rarity-colors"></div> <!-- JS injects buttons here -->
-            
-            <div class="picker-row" style="margin-top:20px; display:flex; gap:10px;">
-                <input type="color" id="native-picker" oninput="ops.pickNative(this.value)" style="height:40px; width:50px; padding:0;">
+            <h3>Select Palette</h3>
+            <div class="color-grid" id="rarity-colors"></div>
+            <div class="picker-row">
                 <input type="text" id="manual-hex" placeholder="<#FFFFFF>">
-                <button onclick="ops.applyColor()" style="background:var(--accent); border:none; color:white; border-radius:4px; font-weight:bold;">APPLY</button>
+                <button class="action-btn primary" onclick="ops.applyColor()">Set Color</button>
             </div>
         </div>
     </div>
 
-    <!-- MAIN UI -->
-    <div id="dashboard-layer">
+    <!-- 1. LOGIN SCREEN (Visible by default) -->
+    <div id="auth-layer">
+        <div class="login-card">
+            <div class="logo">BRUME <span>OPS</span></div>
+            <p>System Access Required</p>
+            <input type="password" id="root-key" placeholder="Enter Admin Key">
+            <button onclick="ops.login()" id="login-btn">Authenticate</button>
+            <div id="auth-msg"></div>
+        </div>
+    </div>
+
+    <!-- 2. MAIN DASHBOARD (HIDDEN BY DEFAULT) -->
+    <!-- Added style="display:none" so it cannot show up on load -->
+    <div id="dashboard-layer" style="display: none;">
+        
         <aside>
             <div class="sidebar-header">
                 <h2>BRUME</h2>
-                <div class="connection-status"><span class="dot"></span> Online</div>
+                <div class="connection-status"><span class="dot"></span> Connected</div>
             </div>
+            
             <nav>
-                <button class="active" onclick="ops.tab('generator')">Item Architect</button>
-                <button onclick="ops.tab('player')">Player Manager</button>
                 <button onclick="ops.tab('overview')">Overview</button>
+                <button onclick="ops.tab('player')">Player Manager</button>
+                <button class="active" onclick="ops.tab('generator')">Item Architect</button>
+                <button onclick="ops.tab('tools')">Dev Tools</button>
             </nav>
+            
             <button class="logout-btn" onclick="location.reload()">Log Out</button>
         </aside>
 
         <main>
-            <!-- ITEM GENERATOR TAB -->
+            <!-- TAB: OVERVIEW -->
+            <div id="tab-overview" class="panel">
+                <h1>Overview</h1>
+                <div class="stats-grid">
+                    <div class="stat-card"><h3>Players</h3><div class="value" id="stat-users">--</div></div>
+                    <div class="stat-card"><h3>Economy</h3><div class="value gold" id="stat-eco">--</div></div>
+                    <div class="stat-card"><h3>Top Player</h3><div class="value purple" id="stat-rich">--</div></div>
+                </div>
+            </div>
+
+            <!-- TAB: PLAYER -->
+            <div id="tab-player" class="panel">
+                <h1>Player Manager</h1>
+                <div class="search-bar">
+                    <input type="text" id="p-search" placeholder="Search UUID/Name...">
+                    <button onclick="ops.lookup()">Find</button>
+                </div>
+                <div id="p-editor" style="display:none; margin-top:20px;">
+                    <!-- Player fields injected here -->
+                </div>
+            </div>
+
+            <!-- TAB: ITEM ARCHITECT (Default Active) -->
             <div id="tab-generator" class="panel active">
                 <div class="panel-header">
                     <h1>Item Architect</h1>
@@ -51,7 +85,7 @@
                 </div>
 
                 <div class="architect-layout">
-                    <!-- FORM -->
+                    <!-- LEFT COLUMN: INPUTS -->
                     <div class="architect-form">
                         <h3>Identity</h3>
                         <div class="form-row">
@@ -60,7 +94,7 @@
                         </div>
                         
                         <div class="color-input-group">
-                            <div class="swatch" id="swatch-name" onclick="ops.openColor('gen-name')"></div>
+                            <div class="swatch" id="swatch-name" style="background:#fff" onclick="ops.openColor('gen-name')"></div>
                             <input type="text" id="gen-name" placeholder="Item Name" oninput="ops.live()">
                         </div>
 
@@ -70,13 +104,10 @@
                                 <option value="RARE">Rare</option>
                                 <option value="LEGENDARY">Legendary</option>
                                 <option value="MYTHIC">Mythic</option>
-                                <option value="EXCLUSIVE">Exclusive</option>
                             </select>
                             <select id="gen-type" onchange="ops.live()">
                                 <option value="WEAPON">Weapon</option>
                                 <option value="ARMOR">Armor</option>
-                                <option value="TOOL">Tool</option>
-                                <option value="MATERIAL">Material</option>
                             </select>
                         </div>
 
@@ -104,7 +135,7 @@
                         <textarea id="gen-ab-desc" placeholder="Description (Use | for new lines)" oninput="ops.live()"></textarea>
                         <textarea id="gen-flavor" placeholder="Flavor Text" oninput="ops.live()"></textarea>
 
-                        <h3>Color Palette</h3>
+                        <h3>Palette</h3>
                         <div class="form-row">
                             <div class="color-input-group">
                                 <div class="swatch" id="swatch-p1" style="background:#fff" onclick="ops.openColor('gen-p1')"></div>
@@ -122,7 +153,7 @@
                         </div>
                     </div>
 
-                    <!-- PREVIEW -->
+                    <!-- RIGHT COLUMN: PREVIEW -->
                     <div class="architect-output">
                         <h3>Preview</h3>
                         <div id="tooltip-preview" class="minecraft-tooltip">
@@ -130,19 +161,15 @@
                             <div class="mc-lore" id="prev-lore"></div>
                         </div>
 
-                        <h3>Code</h3>
+                        <h3>Skript Code</h3>
                         <div class="code-container">
-                            <div class="code-header">SKRIPT</div>
                             <textarea id="gen-out" readonly onclick="this.select()"></textarea>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- OTHER TABS (Hidden) -->
-            <div id="tab-overview" class="panel"><h1>Overview</h1></div>
-            <div id="tab-player" class="panel"><h1>Player Manager</h1></div>
-
+            <div id="tab-tools" class="panel"><h1>Dev Tools</h1></div>
         </main>
     </div>
 
