@@ -19,13 +19,25 @@ const ops = {
         this.live(); // Initial render
     },
 
-    // --- COLOR SYSTEM ---
     renderColorGrid() {
         const grid = document.getElementById('rarity-colors');
         grid.innerHTML = this.colors.map(c => 
             `<div class="color-btn" style="background:${c.hex}" data-name="${c.name}" onclick="ops.pickPreset('${c.hex}')"></div>`
         ).join('');
     },
+
+
+    updateToolHex(val) {
+        const hex = "<#" + val.toUpperCase().substring(1) + ">";
+        document.getElementById('tool-hex').value = hex;
+        document.getElementById('tool-preview').style.background = val;
+    },
+    
+    copyToolHex() {
+        const val = document.getElementById('tool-hex').value;
+        navigator.clipboard.writeText(val);
+        alert("Copied: " + val);
+    }
 
     openColor(inputId) {
         this.activeInput = document.getElementById(inputId);
@@ -188,9 +200,27 @@ const ops = {
     },
 
     formatColors(t) {
-        // Basic parser for preview
         if(!t) return "";
-        return t.replace(/&([0-9a-f])/g, '').replace(/<#(.*?)>/g, '<span style="color:#$1">');
+        
+        const codes = {
+            '0': '#000000', '1': '#0000AA', '2': '#00AA00', '3': '#00AAAA',
+            '4': '#AA0000', '5': '#AA00AA', '6': '#FFAA00', '7': '#AAAAAA',
+            '8': '#555555', '9': '#5555FF', 'a': '#55FF55', 'b': '#55FFFF',
+            'c': '#FF5555', 'd': '#FF55FF', 'e': '#FFFF55', 'f': '#FFFFFF'
+        };
+
+        t = t.replace(/<#(.*?)>/g, (match, hex) => {
+            return `</span><span style="color:#${hex}">`;
+        });
+
+        t = t.replace(/&([0-9a-f])/g, (match, code) => {
+            return `</span><span style="color:${codes[code]}">`;
+        });
+
+        t = t.replace(/&l/g, '</span><span style="font-weight:bold; color:inherit">');
+        t = t.replace(/&o/g, '</span><span style="font-style:italic; color:inherit">');
+        
+        return '<span>' + t + '</span>';
     }
 };
 
