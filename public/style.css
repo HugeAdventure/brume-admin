@@ -1,77 +1,127 @@
 :root {
-    --bg: #0d0d0f;
-    --panel: #16161a;
-    --border: #2a2a30;
-    --green: #2ecc71;
-    --blue: #3498db;
-    --red: #e74c3c;
-    --text: #ecf0f1;
+    --bg: #121216; /* Deep Soft Dark */
+    --panel: #1e1e24;
+    --accent: #6c5ce7; /* Brume Purple */
+    --accent-hover: #5a4bcf;
+    --text: #e0e0e0;
+    --text-dim: #a0a0a0;
+    --border: rgba(255, 255, 255, 0.08);
 }
 
 body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Inter', sans-serif;
     margin: 0;
     height: 100vh;
+    display: flex;
     overflow: hidden;
 }
 
-/* AUTH */
+/* LOGIN */
 #auth-layer {
-    height: 100%; display: flex; align-items: center; justify-content: center;
+    position: fixed; width: 100%; height: 100%;
+    background: var(--bg); display: flex; align-items: center; justify-content: center;
+    z-index: 100;
 }
-.terminal-box {
-    width: 400px; padding: 30px; border: 1px solid var(--border);
-    background: var(--panel); box-shadow: 0 0 20px rgba(0,0,0,0.5);
+.login-card {
+    background: var(--panel);
+    padding: 50px;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    text-align: center;
+    width: 400px;
+    border: 1px solid var(--border);
 }
-input {
-    background: black; border: 1px solid var(--border); color: var(--green);
-    width: 100%; padding: 10px; margin: 10px 0; font-family: inherit;
+.login-card .logo { font-weight: 900; font-size: 24px; margin-bottom: 10px; }
+.login-card input {
+    width: 100%; padding: 12px; margin: 20px 0;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: #121212; color: white;
 }
-button {
-    width: 100%; padding: 10px; background: var(--text); color: black;
-    font-weight: bold; border: none; cursor: pointer; font-family: inherit;
+.login-card button {
+    width: 100%; padding: 12px; border-radius: 8px;
+    background: var(--accent); color: white; font-weight: 600; border: none; cursor: pointer;
 }
-button:hover { background: var(--green); }
 
 /* LAYOUT */
-#dashboard-layer { display: flex; height: 100%; }
-aside {
-    width: 250px; background: #050505; border-right: 1px solid var(--border);
-    padding: 20px; display: flex; flex-direction: column;
-}
-main { flex-grow: 1; padding: 40px; overflow-y: auto; }
+#dashboard-layer { width: 100%; display: flex; }
 
-/* COMPONENTS */
-.brand { font-size: 20px; font-weight: bold; margin-bottom: 5px; }
-.status { font-size: 11px; color: #666; margin-bottom: 40px; }
-.green { color: var(--green); }
+aside {
+    width: 260px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 30px 20px;
+    display: flex; flex-direction: column;
+}
+
+.sidebar-header { margin-bottom: 40px; }
+.sidebar-header h2 { margin: 0; font-weight: 800; letter-spacing: -1px; }
+.connection-status { font-size: 12px; color: var(--text-dim); margin-top: 5px; display: flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 8px #2ecc71; }
 
 nav button {
-    background: none; color: #666; text-align: left; padding: 15px 0;
-    border-bottom: 1px solid #222;
+    width: 100%; text-align: left; padding: 12px 15px;
+    margin-bottom: 5px; border-radius: 8px; border: none;
+    background: none; color: var(--text-dim); cursor: pointer; font-weight: 500; font-size: 14px;
+    transition: 0.2s;
 }
-nav button.active { color: var(--green); border-bottom: 1px solid var(--green); }
+nav button:hover { background: rgba(255,255,255,0.03); color: white; }
+nav button.active { background: var(--accent); color: white; }
 
-.card {
-    background: var(--panel); border: 1px solid var(--border);
-    padding: 20px; margin-bottom: 20px;
+.logout-btn { margin-top: auto; color: #ff5555; background: none; border: none; cursor: pointer; font-weight: 600; text-align: left; padding: 10px; }
+
+main { flex: 1; padding: 50px; overflow-y: auto; background: linear-gradient(135deg, #121216 0%, #16161a 100%); }
+
+.panel { display: none; max-width: 1100px; margin: 0 auto; }
+.panel.active { display: block; animation: fade 0.4s ease; }
+@keyframes fade { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+
+/* CARDS & INPUTS */
+.stat-card { background: var(--panel); padding: 25px; border-radius: 12px; border: 1px solid var(--border); }
+.value { font-size: 32px; font-weight: 800; margin-top: 10px; }
+.value.gold { color: #f1c40f; }
+.value.purple { color: #9b59b6; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+
+input, select, textarea {
+    background: #0a0a0c; border: 1px solid var(--border);
+    color: white; padding: 12px; border-radius: 8px; width: 100%;
+    font-family: 'Inter', sans-serif;
 }
-.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-label { font-size: 10px; color: #666; display: block; margin-bottom: 5px; }
-h1 { margin: 0; font-size: 32px; }
+textarea { height: 100px; resize: vertical; }
 
-/* EDITOR */
-.console-input { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
-.form-row { margin-bottom: 15px; }
-.dim { color: #555; font-size: 12px; }
-.blue { color: var(--blue); }
+/* ITEM ARCHITECT */
+.architect-layout { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 40px; margin-top: 20px; }
+.form-row { display: flex; gap: 15px; margin-bottom: 15px; }
+.form-row.three { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+h3 { font-size: 14px; text-transform: uppercase; color: var(--text-dim); margin: 20px 0 10px 0; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
 
-/* GENERATOR */
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-textarea {
-    width: 100%; height: 300px; background: #000; color: #aaa;
-    border: 1px solid var(--border); margin-top: 20px; padding: 15px;
-    font-size: 12px; resize: none;
+/* MINECRAFT TOOLTIP PREVIEW */
+.minecraft-tooltip {
+    background: rgba(16, 0, 16, 0.95); /* Deep purple/black */
+    border: 3px solid #320a4e; /* Outer border */
+    border-radius: 4px;
+    padding: 12px;
+    font-family: 'Minecraft', sans-serif;
+    color: #fff;
+    box-shadow: 5px 5px 0 rgba(0,0,0,0.5);
+    min-height: 200px;
+    line-height: 1.4;
+    font-size: 16px;
+    text-shadow: 2px 2px #000; /* Text Shadow for readability */
+    position: relative;
 }
+/* Inner border trick */
+.minecraft-tooltip::before {
+    content: ''; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px;
+    border: 3px solid #230641; border-radius: 4px; z-index: -1;
+}
+
+.mc-name { font-size: 18px; margin-bottom: 5px; }
+.mc-lore { color: #aaaaaa; }
+.mc-lore div { margin-bottom: 2px; }
+
+#gen-out { font-family: 'JetBrains Mono'; color: #aaffaa; height: 300px; margin-top: 20px; }
+.gen-btn { width: 100%; background: #2ecc71; color: white; padding: 15px; border: none; border-radius: 8px; font-weight: 800; cursor: pointer; margin-top: 20px; transition: 0.2s;}
+.gen-btn:hover { background: #27ae60; transform: translateY(-2px); }
