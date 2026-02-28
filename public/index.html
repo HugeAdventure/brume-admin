@@ -170,6 +170,74 @@
             </div>
 
             <div id="tab-tools" class="panel"><h1>Dev Tools</h1></div>
+                <!-- VIEW: TOOLS -->
+<div id="tab-tools" class="panel">
+    <h1>Developer Toolkit</h1>
+    
+    <div class="tools-grid">
+        
+        <!-- 1. GRADIENT GENERATOR -->
+        <div class="tool-card">
+            <h3>Gradient Generator</h3>
+            <div class="form-row">
+                <input type="text" id="grad-text" placeholder="Your Text Here" oninput="ops.tools.grad()">
+            </div>
+            <div class="form-row">
+                <div class="color-input-group">
+                    <div class="swatch" id="swatch-g1" style="background:#55FFFF" onclick="ops.openColor('grad-c1')"></div>
+                    <input type="text" id="gen-g1" value="<#55FFFF>" oninput="ops.tools.grad()" id="grad-c1">
+                </div>
+                <div class="color-input-group">
+                    <div class="swatch" id="swatch-g2" style="background:#51559B" onclick="ops.openColor('grad-c2')"></div>
+                    <input type="text" id="gen-g2" value="<#51559B>" oninput="ops.tools.grad()" id="grad-c2">
+                </div>
+            </div>
+            <div class="preview-box" id="grad-preview">Preview</div>
+            <textarea id="grad-out" readonly onclick="this.select()" style="height:60px; margin-top:10px;"></textarea>
+        </div>
+
+        <!-- 2. XP & MATH CALCULATOR -->
+        <div class="tool-card">
+            <h3>RPG Math Engine</h3>
+            <div class="input-group">
+                <label>Target Level</label>
+                <input type="number" id="math-lvl" value="10" oninput="ops.tools.xp()">
+            </div>
+            <div class="math-results">
+                <div class="math-row"><span>XP Required:</span> <b id="out-req" class="gold">0</b></div>
+                <div class="math-row"><span>Total XP:</span> <b id="out-total" class="purple">0</b></div>
+                <div class="math-row"><span>Dmg Reduction (Def):</span> <b id="out-def" class="green">0%</b></div>
+            </div>
+            <div class="input-group" style="margin-top:15px;">
+                <label>Test Defense Value</label>
+                <input type="number" id="math-def" value="100" oninput="ops.tools.xp()">
+            </div>
+        </div>
+
+        <!-- 3. MINIMESSAGE CONVERTER -->
+        <div class="tool-card">
+            <h3>Legacy to MiniMessage</h3>
+            <input type="text" id="mm-in" placeholder="&c&lLegacy Text..." oninput="ops.tools.mm()">
+            <div class="preview-box" id="mm-preview" style="margin:10px 0;">Preview</div>
+            <textarea id="mm-out" readonly onclick="this.select()" style="height:80px;"></textarea>
+        </div>
+
+        <!-- 4. SNIPPET LIBRARY -->
+        <div class="tool-card">
+            <h3>Snippet Library</h3>
+            <div class="snippet-grid">
+                <button onclick="ops.tools.snip('gui')">GUI Template</button>
+                <button onclick="ops.tools.snip('nbt')">NBT Check</button>
+                <button onclick="ops.tools.snip('loop')">Loop Players</button>
+                <button onclick="ops.tools.snip('skull')">Skull NBT</button>
+                <button onclick="ops.tools.snip('packet')">Packet Event</button>
+                <button onclick="ops.tools.snip('command')">Admin Command</button>
+            </div>
+            <textarea id="snip-out" readonly onclick="this.select()" style="height:140px; margin-top:10px;" placeholder="Click a button to generate code..."></textarea>
+        </div>
+
+    </div>
+</div>
         </main>
     </div>
 
