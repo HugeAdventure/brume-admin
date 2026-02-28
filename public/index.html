@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Brume Operations</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -21,7 +21,7 @@
         </div>
     </div>
 
-    <!-- 1. LOGIN SCREEN (Visible by default) -->
+    <!-- LOGIN SCREEN -->
     <div id="auth-layer">
         <div class="login-card">
             <div class="logo">BRUME <span>OPS</span></div>
@@ -32,10 +32,8 @@
         </div>
     </div>
 
-    <!-- 2. MAIN DASHBOARD (HIDDEN BY DEFAULT) -->
-    <!-- Added style="display:none" so it cannot show up on load -->
+    <!-- MAIN DASHBOARD -->
     <div id="dashboard-layer" style="display: none;">
-        
         <aside>
             <div class="sidebar-header">
                 <h2>BRUME</h2>
@@ -71,43 +69,52 @@
                     <button onclick="ops.lookup()">Find</button>
                 </div>
                 <div id="p-editor" style="display:none; margin-top:20px;">
-                    <!-- Player fields injected here -->
+                    <div class="player-header">
+                        <h2 id="val-name">Player</h2>
+                        <span id="val-uuid">UUID</span>
+                    </div>
+                    <div class="form-grid">
+                        <div class="input-group"><label>Coins</label><input type="number" id="inp-coins"></div>
+                        <div class="input-group"><label>Level</label><input type="number" id="inp-level"></div>
+                    </div>
+                    <button class="gen-btn" onclick="ops.savePlayer()">Save Changes to DB</button>
                 </div>
             </div>
 
-            <!-- TAB: ITEM ARCHITECT (Default Active) -->
+            <!-- TAB: ITEM ARCHITECT -->
             <div id="tab-generator" class="panel active">
                 <div class="panel-header">
                     <h1>Item Architect</h1>
-                    <div class="actions">
-                        <button class="action-btn" onclick="ops.resetGen()">Reset</button>
-                    </div>
+                    <div class="actions"><button class="action-btn" onclick="ops.resetGen()">Reset</button></div>
                 </div>
 
                 <div class="architect-layout">
-                    <!-- LEFT COLUMN: INPUTS -->
+                    <!-- LEFT COLUMN -->
                     <div class="architect-form">
                         <h3>Identity</h3>
                         <div class="form-row">
                             <input type="text" id="gen-id" placeholder="ID (e.g. VOID_SWORD)" oninput="ops.live()">
                             <input type="text" id="gen-mat" placeholder="Material (e.g. iron sword)" oninput="ops.live()">
                         </div>
-                        
                         <div class="color-input-group">
                             <div class="swatch" id="swatch-name" style="background:#fff" onclick="ops.openColor('gen-name')"></div>
                             <input type="text" id="gen-name" placeholder="Item Name" oninput="ops.live()">
                         </div>
-
                         <div class="form-row">
                             <select id="gen-tier" onchange="ops.live()">
                                 <option value="COMMON">Common</option>
+                                <option value="UNCOMMON">Uncommon</option>
                                 <option value="RARE">Rare</option>
+                                <option value="EPIC">Epic</option>
                                 <option value="LEGENDARY">Legendary</option>
                                 <option value="MYTHIC">Mythic</option>
+                                <option value="EXCLUSIVE">Exclusive</option>
                             </select>
                             <select id="gen-type" onchange="ops.live()">
                                 <option value="WEAPON">Weapon</option>
                                 <option value="ARMOR">Armor</option>
+                                <option value="TOOL">Tool</option>
+                                <option value="MATERIAL">Material</option>
                             </select>
                         </div>
 
@@ -153,15 +160,14 @@
                         </div>
                     </div>
 
-                    <!-- RIGHT COLUMN: PREVIEW -->
+                    <!-- RIGHT COLUMN -->
                     <div class="architect-output">
                         <h3>Preview</h3>
                         <div id="tooltip-preview" class="minecraft-tooltip">
                             <div class="mc-name" id="prev-name">Item Name</div>
                             <div class="mc-lore" id="prev-lore"></div>
                         </div>
-
-                        <h3>Skript Code</h3>
+                        <h3 style="margin-top:20px;">Skript Code</h3>
                         <div class="code-container">
                             <textarea id="gen-out" readonly onclick="this.select()"></textarea>
                         </div>
@@ -169,32 +175,30 @@
                 </div>
             </div>
 
+            <!-- TAB: DEV TOOLS -->
             <div id="tab-tools" class="panel">
                 <h1>Developer Toolkit</h1>
-                
                 <div class="tools-grid">
                     
-                    <!-- 1. GRADIENT GENERATOR -->
+                    <!-- Gradient Gen -->
                     <div class="tool-card">
                         <h3>Gradient Generator</h3>
-                        <div class="form-row">
-                            <input type="text" id="grad-text" placeholder="Your Text Here" oninput="ops.tools.grad()">
-                        </div>
-                        <div class="form-row">
+                        <input type="text" id="grad-text" placeholder="Your Text Here" oninput="ops.tools.grad()">
+                        <div class="form-row" style="margin-top:15px;">
                             <div class="color-input-group">
                                 <div class="swatch" id="swatch-g1" style="background:#55FFFF" onclick="ops.openColor('grad-c1')"></div>
-                                <input type="text" id="gen-g1" value="<#55FFFF>" oninput="ops.tools.grad()" id="grad-c1">
+                                <input type="text" id="grad-c1" value="<#55FFFF>" oninput="ops.tools.grad()">
                             </div>
                             <div class="color-input-group">
                                 <div class="swatch" id="swatch-g2" style="background:#51559B" onclick="ops.openColor('grad-c2')"></div>
-                                <input type="text" id="gen-g2" value="<#51559B>" oninput="ops.tools.grad()" id="grad-c2">
+                                <input type="text" id="grad-c2" value="<#51559B>" oninput="ops.tools.grad()">
                             </div>
                         </div>
                         <div class="preview-box" id="grad-preview">Preview</div>
-                        <textarea id="grad-out" readonly onclick="this.select()" style="height:60px; margin-top:10px;"></textarea>
+                        <textarea id="grad-out" readonly onclick="this.select()" style="height:50px; margin-top:10px;"></textarea>
                     </div>
             
-                    <!-- 2. XP & MATH CALCULATOR -->
+                    <!-- XP Math -->
                     <div class="tool-card">
                         <h3>RPG Math Engine</h3>
                         <div class="input-group">
@@ -204,7 +208,7 @@
                         <div class="math-results">
                             <div class="math-row"><span>XP Required:</span> <b id="out-req" class="gold">0</b></div>
                             <div class="math-row"><span>Total XP:</span> <b id="out-total" class="purple">0</b></div>
-                            <div class="math-row"><span>Dmg Reduction (Def):</span> <b id="out-def" class="green">0%</b></div>
+                            <div class="math-row"><span>Damage Blocked:</span> <b id="out-def" class="green">0%</b></div>
                         </div>
                         <div class="input-group" style="margin-top:15px;">
                             <label>Test Defense Value</label>
@@ -212,28 +216,27 @@
                         </div>
                     </div>
             
-                    <!-- 3. MINIMESSAGE CONVERTER -->
+                    <!-- MiniMessage -->
                     <div class="tool-card">
                         <h3>Legacy to MiniMessage</h3>
                         <input type="text" id="mm-in" placeholder="&c&lLegacy Text..." oninput="ops.tools.mm()">
                         <div class="preview-box" id="mm-preview" style="margin:10px 0;">Preview</div>
-                        <textarea id="mm-out" readonly onclick="this.select()" style="height:80px;"></textarea>
+                        <textarea id="mm-out" readonly onclick="this.select()" style="height:60px;"></textarea>
                     </div>
             
-                    <!-- 4. SNIPPET LIBRARY -->
+                    <!-- Snippets -->
                     <div class="tool-card">
                         <h3>Snippet Library</h3>
                         <div class="snippet-grid">
-                            <button onclick="ops.tools.snip('gui')">GUI Template</button>
-                            <button onclick="ops.tools.snip('nbt')">NBT Check</button>
-                            <button onclick="ops.tools.snip('loop')">Loop Players</button>
-                            <button onclick="ops.tools.snip('skull')">Skull NBT</button>
-                            <button onclick="ops.tools.snip('packet')">Packet Event</button>
-                            <button onclick="ops.tools.snip('command')">Admin Command</button>
+                            <button class="action-btn" onclick="ops.tools.snip('gui')">GUI Template</button>
+                            <button class="action-btn" onclick="ops.tools.snip('nbt')">NBT Check</button>
+                            <button class="action-btn" onclick="ops.tools.snip('loop')">Loop Players</button>
+                            <button class="action-btn" onclick="ops.tools.snip('skull')">Skull NBT</button>
+                            <button class="action-btn" onclick="ops.tools.snip('packet')">Packet Event</button>
+                            <button class="action-btn" onclick="ops.tools.snip('command')">Command</button>
                         </div>
-                        <textarea id="snip-out" readonly onclick="this.select()" style="height:140px; margin-top:10px;" placeholder="Click a button to generate code..."></textarea>
+                        <textarea id="snip-out" readonly onclick="this.select()" style="height:120px; margin-top:10px;"></textarea>
                     </div>
-            
                 </div>
             </div>
         </main>
