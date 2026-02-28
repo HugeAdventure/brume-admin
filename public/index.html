@@ -2,97 +2,168 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Brume OPS // TERMINAL</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <title>Brume Operations</title>
+    <!-- UI Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Minecraft Font -->
+    <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+    <!-- LOGIN SCREEN -->
     <div id="auth-layer">
-        <div class="terminal-box">
-            <div class="line">BRUME_ENGINE_V5.0 // SECURITY_CHECK</div>
-            <div class="line">ENTER_ROOT_KEY:</div>
-            <input type="password" id="root-key" autofocus placeholder="ACCESS_TOKEN">
-            <button onclick="ops.login()">INITIALIZE</button>
-            <div id="auth-msg" class="line error"></div>
+        <div class="login-card">
+            <div class="logo">BRUME <span>OPS</span></div>
+            <p>Please authenticate to continue.</p>
+            <input type="password" id="root-key" placeholder="Admin Key">
+            <button onclick="ops.login()" id="login-btn">Enter Dashboard</button>
+            <div id="auth-msg"></div>
         </div>
     </div>
 
+    <!-- MAIN DASHBOARD -->
     <div id="dashboard-layer" style="display: none;">
         
+        <!-- SIDEBAR -->
         <aside>
-            <div class="brand">BRUME<span>_OPS</span></div>
-            <div class="status">DB_CONNECTION: <span class="green">ACTIVE</span></div>
+            <div class="sidebar-header">
+                <h2>BRUME</h2>
+                <div class="connection-status"><span class="dot"></span> Connected</div>
+            </div>
             
             <nav>
-                <button class="active" onclick="ops.tab('overview')">[1] OVERVIEW</button>
-                <button onclick="ops.tab('player')">[2] PLAYER_DB</button>
-                <button onclick="ops.tab('generator')">[3] NBT_FORGE</button>
+                <button class="active" onclick="ops.tab('overview')">Overview</button>
+                <button onclick="ops.tab('player')">Player Manager</button>
+                <button onclick="ops.tab('generator')">Item Architect</button>
             </nav>
             
-            <div class="logout" onclick="location.reload()">[X] TERMINATE</div>
+            <button class="logout-btn" onclick="location.reload()">Log Out</button>
         </aside>
 
+        <!-- CONTENT AREA -->
         <main>
+            <!-- OVERVIEW TAB -->
             <div id="tab-overview" class="panel active">
-                <div class="grid-3">
-                    <div class="card">
-                        <label>TOTAL_USERS</label>
-                        <h1 id="stat-users">...</h1>
+                <h1>Server Overview</h1>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Total Players</h3>
+                        <div class="value" id="stat-users">--</div>
                     </div>
-                    <div class="card">
-                        <label>GLOBAL_ECONOMY</label>
-                        <h1 id="stat-eco" style="color:#FFD700">...</h1>
+                    <div class="stat-card">
+                        <h3>Economy Value</h3>
+                        <div class="value gold" id="stat-eco">--</div>
                     </div>
-                    <div class="card">
-                        <label>RICHEST_ENTITY</label>
-                        <h3 id="stat-rich">...</h3>
+                    <div class="stat-card">
+                        <h3>Top Player</h3>
+                        <div class="value purple" id="stat-rich">--</div>
                     </div>
                 </div>
             </div>
 
+            <!-- PLAYER TAB -->
             <div id="tab-player" class="panel">
-                <div class="console-input">
-                    <span>QUERY ></span>
-                    <input type="text" id="p-search" placeholder="Username or UUID">
-                    <button onclick="ops.lookup()">EXECUTE</button>
+                <h1>Player Manager</h1>
+                <div class="search-bar">
+                    <input type="text" id="p-search" placeholder="Search by Username or UUID...">
+                    <button onclick="ops.lookup()">Search</button>
                 </div>
 
-                <div id="p-editor" style="display:none; margin-top:20px;">
-                    <div class="card">
-                        <div class="line">UUID: <span id="val-uuid" class="dim"></span></div>
-                        <div class="line">NAME: <span id="val-name" class="blue"></span></div>
-                        <hr>
-                        <div class="form-row">
-                            <label>COINS:</label>
+                <div id="p-editor" class="editor-card" style="display:none;">
+                    <div class="player-header">
+                        <h2 id="val-name">Player Name</h2>
+                        <span id="val-uuid">UUID</span>
+                    </div>
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label>Coins</label>
                             <input type="number" id="inp-coins">
                         </div>
-                        <div class="form-row">
-                            <label>LEVEL:</label>
+                        <div class="input-group">
+                            <label>Level</label>
                             <input type="number" id="inp-level">
                         </div>
-                        <button class="save-btn" onclick="ops.savePlayer()">COMMIT CHANGES >> SQL</button>
                     </div>
+                    <button class="save-btn" onclick="ops.savePlayer()">Save Changes</button>
                 </div>
             </div>
 
+            <!-- ITEM GENERATOR TAB -->
             <div id="tab-generator" class="panel">
-                <div class="card">
-                    <div class="form-grid">
-                        <input type="text" id="gen-id" placeholder="ITEM_ID (e.g. VOID_AXE)">
-                        <input type="text" id="gen-name" placeholder="Display Name (e.g. &dVoid Axe)">
-                        <select id="gen-tier">
-                            <option value="COMMON">COMMON</option>
-                            <option value="RARE">RARE</option>
-                            <option value="LEGENDARY">LEGENDARY</option>
-                            <option value="MYTHIC">MYTHIC</option>
-                        </select>
-                        <input type="text" id="gen-mat" placeholder="Material (e.g. iron axe)">
-                        <input type="number" id="gen-dmg" placeholder="Damage Stat">
-                        <input type="number" id="gen-str" placeholder="Strength Stat">
+                <h1>Item Architect</h1>
+                <div class="architect-layout">
+                    
+                    <!-- INPUT FORM -->
+                    <div class="architect-form">
+                        <h3>Core Details</h3>
+                        <div class="form-row">
+                            <input type="text" id="gen-id" placeholder="ID (e.g. GALE_HELMET)">
+                            <input type="text" id="gen-mat" placeholder="Material (e.g. leather helmet)">
+                        </div>
+                        <div class="form-row">
+                            <input type="text" id="gen-name" placeholder="Display Name (Supports Hex)">
+                            <select id="gen-tier">
+                                <option value="COMMON">Common</option>
+                                <option value="UNCOMMON">Uncommon</option>
+                                <option value="RARE">Rare</option>
+                                <option value="EPIC">Epic</option>
+                                <option value="LEGENDARY">Legendary</option>
+                                <option value="MYTHIC">Mythic</option>
+                            </select>
+                            <select id="gen-type">
+                                <option value="WEAPON">Weapon</option>
+                                <option value="ARMOR">Armor</option>
+                                <option value="TOOL">Tool</option>
+                                <option value="MATERIAL">Material</option>
+                            </select>
+                        </div>
+                        
+                        <h3>Combat Stats</h3>
+                        <div class="form-row three">
+                            <input type="number" id="gen-dmg" placeholder="Damage">
+                            <input type="number" id="gen-str" placeholder="Strength">
+                            <input type="number" id="gen-crit" placeholder="Crit %">
+                        </div>
+                        <div class="form-row three">
+                            <input type="number" id="gen-hp" placeholder="Health">
+                            <input type="number" id="gen-def" placeholder="Defense">
+                            <input type="number" id="gen-spd" placeholder="Speed">
+                        </div>
+
+                        <h3>Sandbox Stats</h3>
+                        <div class="form-row">
+                            <input type="number" id="gen-mspd" placeholder="Mining Speed">
+                            <input type="number" id="gen-mfort" placeholder="Mining Fortune">
+                        </div>
+
+                        <h3>Ability & Lore</h3>
+                        <input type="text" id="gen-ab-name" placeholder="Ability Name">
+                        <textarea id="gen-ab-desc" placeholder="Ability Description (Use | for new lines)"></textarea>
+                        <textarea id="gen-flavor" placeholder="Flavor Text"></textarea>
+                        
+                        <h3>Palette (Hex)</h3>
+                        <div class="form-row">
+                            <input type="text" id="gen-p1" value="<#87CEEB>" placeholder="Primary Color">
+                            <input type="text" id="gen-p2" value="<#0091D5>" placeholder="Secondary Color">
+                        </div>
+
+                        <button class="gen-btn" onclick="ops.generate()">Generate & Preview</button>
                     </div>
-                    <button class="gen-btn" onclick="ops.generate()">COMPILE SKRIPT CODE</button>
-                    <textarea id="gen-out" readonly onclick="this.select()"></textarea>
+
+                    <!-- LIVE PREVIEW & CODE -->
+                    <div class="architect-output">
+                        <h3>In-Game Preview</h3>
+                        <div id="tooltip-preview" class="minecraft-tooltip">
+                            <div class="mc-name" id="prev-name">Item Name</div>
+                            <div class="mc-lore" id="prev-lore">
+                                <!-- Stats go here -->
+                            </div>
+                        </div>
+
+                        <h3>Skript Code</h3>
+                        <textarea id="gen-out" readonly onclick="this.select()"></textarea>
+                    </div>
                 </div>
             </div>
 
@@ -102,4 +173,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
