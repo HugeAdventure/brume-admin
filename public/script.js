@@ -54,6 +54,110 @@ const ops = {
         return await fetch(`/api/ops?mode=${mode}`, opts).then(r => r.json());
     },
 
+    currentSnipCat: 'ALL',
+    
+    snippetDB:[
+        {
+            title: "Metadata GUI Skeleton",
+            cat: "GUI",
+            desc: "The standard 1.21.1 zero-flicker chest GUI template.",
+            code: `function openMyMenu(p: player):\n    set metadata tag "my_gui" of {_p} to chest inventory with 6 rows named "§8Menu Title"\n    set {_gui} to metadata tag "my_gui" of {_p}\n    \n    loop 54 times:\n        set slot (loop-value - 1) of {_gui} to black stained glass pane named " "\n        \n    open {_gui} to {_p}\n\non inventory click:\n    if event-inventory = (metadata tag "my_gui" of player):\n        cancel event\n        if index of event-slot is 13:\n            send "&aClicked!"`
+        },
+        {
+            title: "Spawn 3D Interaction Entity",
+            cat: "VISUALS",
+            desc: "Spawns an invisible hitbox + visual block display (For altars, NPCS, etc).",
+            code: `set {_loc} to player's location\n# 1. The Visual\nspawn block display at {_loc}:\n    set {_vis} to entity\n    set display block data of {_vis} to crying obsidian\n    set display scale of {_vis} to vector(1, 1, 1)\n\n# 2. The Hitbox\nspawn interaction at {_loc}:\n    set {_hitbox} to entity\n    set interaction width of {_hitbox} to 1.0\n    set interaction height of {_hitbox} to 1.0\n    set string tag "brume_type" of custom nbt compound of {_hitbox} to "MY_ENTITY"\n    set metadata value "visual" of {_hitbox} to {_vis}`
+        },
+        {
+            title: "Extract NBT ID",
+            cat: "NBT",
+            desc: "Safely pull the custom ID from an item to check it against the registry.",
+            code: `set {_i} to player's tool\nif {_i} is air:\n    stop\n\nset {_n} to custom nbt compound of {_i}\nset {_id} to string tag "id" of {_n}\n\nif {_id} is "GALE_HELMET":\n    send "It's the Gale Helmet!"`
+        },
+        {
+            title: "Async SQL Execution",
+            cat: "DB",
+            desc: "Standard skript-reflect JDBC template for zero-lag database calls.",
+            code: `run section async:\n    try:\n        set {_conn} to DriverManager.getConnection({-sql::url}, {-sql::user}, {-sql::pass})\n        set {_query} to "UPDATE players SET coins = ? WHERE uuid = ?"\n        set {_ps} to {_conn}.prepareStatement({_query})\n        \n        {_ps}.setInt(1, Integer.valueOf({_coins}))\n        {_ps}.setString(2, "%{_uuid}%")\n        \n        {_ps}.executeUpdate()\n        {_ps}.close()\n        {_conn}.close()\n    catch {_e}:\n        log "[SQL ERROR] %{_e}.getMessage()%" to console`
+        },
+        {
+            title: "Client-Side Interpolation",
+            cat: "VISUALS",
+            desc: "Smoothly move/scale a display entity without server lag.",
+            code: `# Set animation time (e.g., 20 ticks = 1 second)\nset interpolation duration of {_display} to 20 ticks\nset interpolation delay of {_display} to 0 ticks\n\n# Tell it what to do (Move, Scale, or Rotate)\nset display scale of {_display} to vector(2, 2, 2)\nrotate {_display} around y axis by 180`
+        },
+        {
+            title: "Vector Dash (Math)",
+            cat: "MATH",
+            desc: "Pushes a player in the exact direction they are looking.",
+            code: `set {_dir} to player's direction\nset {_vel} to {_dir}.clone().multiply(1.5)\nset velocity of player to {_vel}\nplay sound "entity.wind_charge.throw" to player\nmake 20 of cloud at player`
+        },
+        {
+            title: "Action Bar Component",
+            cat: "GUI",
+            desc: "Send a MiniMessage string with a custom 1.21.1 sprite icon.",
+            code: `set {_sprite} to "<sprite:item:diamond_sword>"\nset {_msg} to mini message from "<#ff5555>Combat Engaged %{_sprite}%"\nsend action bar {_msg} to player`
+        }
+    ],
+
+    renderSnippets(query = "") {
+        const container = document.getElementById('snippet-container');
+        if (!container) return;
+
+        let html = "";
+        this.snippetDB.forEach(s => {
+            // Filter Logic
+            if (this.currentSnipCat !== 'ALL' && s.cat !== this.currentSnipCat) return;
+            if (query && !s.title.toLowerCase().includes(query.toLowerCase()) && !s.desc.toLowerCase().includes(query.toLowerCase())) return;
+
+            // HTML Encoding for the code block so <#HEX> tags don't break the HTML
+            const safeCode = s.code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+            html += `
+            <div class="snip-card">
+                <div class="snip-header">
+                    <div class="snip-title">${s.title} <span class="snip-badge">${s.cat}</span></div>
+                    <button class="snip-copy" onclick="ops.copySnip(this, \`${btoa(s.code)}\`)">COPY</button>
+                </div>
+                <div class="snip-body">
+                    <pre class="snip-code">${safeCode}</pre>
+                    <div class="snip-desc">${s.desc}</div>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html || "<p style='color:#666;'>No snippets found.</p>";
+    },
+
+    filterCat(cat) {
+        this.currentSnipCat = cat;
+        // Update Pill CSS
+        document.querySelectorAll('#snip-cats .pill').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+        this.renderSnippets(document.getElementById('snip-search').value);
+    },
+
+    filterSnippets() {
+        const q = document.getElementById('snip-search').value;
+        this.renderSnippets(q);
+    },
+
+    copySnip(btn, b64Code) {
+        // Decode the base64 code to prevent quotes from breaking the JS execution
+        const rawCode = atob(b64Code);
+        navigator.clipboard.writeText(rawCode);
+        
+        const originalText = btn.innerText;
+        btn.innerText = "COPIED!";
+        btn.style.background = "var(--success)";
+        this.toast("Snippet copied to clipboard!");
+        
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.style.background = "var(--accent)";
+        }, 1500);
+    },
+
     // --- NAVIGATION ---
     navigate(viewId) {
         document.querySelectorAll('.view-page').forEach(e => e.classList.remove('active'));
