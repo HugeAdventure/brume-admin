@@ -80,6 +80,27 @@
                 </div>
             </div>
 
+            <div id="view-snippets" class="view-page">
+                <h1>Snippet Library</h1>
+                <p style="color:var(--text-dim); margin-bottom: 20px;">Standardized code blocks for the Brume Engine.</p>
+                
+                <div class="search-bar" style="margin-bottom: 15px;">
+                    <input type="text" id="snip-search" placeholder="Search snippets..." onkeyup="ops.filterSnippets()">
+                </div>
+                <div class="category-pills" id="snip-cats">
+                    <button class="pill active" onclick="ops.filterCat('ALL')">ALL</button>
+                    <button class="pill" onclick="ops.filterCat('GUI')">GUI</button>
+                    <button class="pill" onclick="ops.filterCat('NBT')">NBT</button>
+                    <button class="pill" onclick="ops.filterCat('VISUALS')">VISUALS</button>
+                    <button class="pill" onclick="ops.filterCat('MATH')">MATH / LOGIC</button>
+                    <button class="pill" onclick="ops.filterCat('DB')">DATABASE</button>
+                </div>
+
+                <div class="snippet-masonry" id="snippet-container">
+                    <!-- JS Injects Snippets Here -->
+                </div>
+            </div>
+
             <!-- PLAYER MANAGER -->
             <div id="view-player" class="view-page">
                 <h1>Player Database</h1>
