@@ -107,6 +107,107 @@ const ops = {
         }
     },
 
+    // --- [ DEV TOOLS ENGINE ] ---
+    tools: {
+        // 1. Gradient Logic
+        grad() {
+            const text = document.getElementById('grad-text').value || "Gradient";
+            const c1 = ops.parseHex(document.getElementById('gen-g1').value);
+            const c2 = ops.parseHex(document.getElementById('gen-g2').value);
+            
+            // Visual Preview
+            const prev = document.getElementById('grad-preview');
+            prev.style.background = `linear-gradient(to right, ${c1}, ${c2})`;
+            prev.style.webkitBackgroundClip = "text";
+            prev.style.webkitTextFillColor = "transparent";
+            prev.innerText = text;
+            
+            // Update Swatches (Since we reused the ID, we hook back to main ops)
+            document.getElementById('swatch-g1').style.background = c1;
+            document.getElementById('swatch-g2').style.background = c2;
+
+            // Generate Skript Code (Simple 2-color interpolation for now)
+            // Note: True char-by-char interpolation is complex in JS, 
+            // returning the MiniMessage format is best for 1.21.1
+            const mmCode = `<gradient:${c1}:${c2}>${text}</gradient>`;
+            document.getElementById('grad-out').value = mmCode;
+        },
+
+        // 2. XP & Math Logic
+        xp() {
+            const lvl = parseInt(document.getElementById('math-lvl').value) || 1;
+            const def = parseInt(document.getElementById('math-def').value) || 0;
+            
+            // Formula: 40 * (lvl + 1) ^ 1.07
+            const req = Math.round(40 * Math.pow(lvl + 1, 1.07));
+            
+            // Formula: 100 / (100 + Defense)
+            const reduction = 100 / (100 + def); // Damage taken multiplier
+            const mitigated = (1 - reduction) * 100; // % blocked
+            
+            document.getElementById('out-req').innerText = req.toLocaleString() + " XP";
+            
+            // Approx total (sum of series)
+            let total = 0;
+            for(let i=1; i<lvl; i++) total += Math.round(40 * Math.pow(i + 1, 1.07));
+            document.getElementById('out-total').innerText = total.toLocaleString() + " XP";
+            
+            document.getElementById('out-def').innerText = mitigated.toFixed(1) + "%";
+        },
+
+        // 3. MiniMessage Converter
+        mm() {
+            let t = document.getElementById('mm-in').value;
+            
+            // Basic Replacements
+            t = t.replace(/&0/g, "<black>");
+            t = t.replace(/&1/g, "<dark_blue>");
+            t = t.replace(/&2/g, "<dark_green>");
+            t = t.replace(/&3/g, "<dark_aqua>");
+            t = t.replace(/&4/g, "<dark_red>");
+            t = t.replace(/&5/g, "<dark_purple>");
+            t = t.replace(/&6/g, "<gold>");
+            t = t.replace(/&7/g, "<gray>");
+            t = t.replace(/&8/g, "<dark_gray>");
+            t = t.replace(/&9/g, "<blue>");
+            t = t.replace(/&a/g, "<green>");
+            t = t.replace(/&b/g, "<aqua>");
+            t = t.replace(/&c/g, "<red>");
+            t = t.replace(/&d/g, "<light_purple>");
+            t = t.replace(/&e/g, "<yellow>");
+            t = t.replace(/&f/g, "<white>");
+            
+            t = t.replace(/&l/g, "<bold>");
+            t = t.replace(/&o/g, "<italic>");
+            t = t.replace(/&n/g, "<underlined>");
+            t = t.replace(/&m/g, "<strikethrough>");
+            t = t.replace(/&k/g, "<obfuscated>");
+            t = t.replace(/&r/g, "<reset>");
+            
+            t = t.replace(/<#(.*?)>/g, "<#$1>");
+
+            document.getElementById('mm-out').value = t;
+            const p = document.getElementById('mm-preview');
+            p.innerHTML = ops.formatColors(document.getElementById('mm-in').value);
+        },
+
+        snip(type) {
+            let code = "";
+            if(type === 'gui') {
+                code = `function openMenu(p: player):\n    set metadata tag "menu" of {_p} to chest inventory with 3 rows named "Menu"\n    set {_gui} to metadata tag "menu" of {_p}\n    loop 27 times:\n        set slot (loop-value - 1) of {_gui} to black stained glass pane named " "\n    open {_gui} to {_p}\n\non inventory click:\n    if event-inventory = (metadata tag "menu" of player):\n        cancel event\n        if index of event-slot is 13:\n            # Logic`;
+            } else if (type === 'nbt') {
+                code = `set {_n} to custom nbt compound of player's tool\nset {_id} to string tag "id" of {_n}\nif {_id} is "ITEM_ID":\n    # Logic`;
+            } else if (type === 'loop') {
+                code = `loop all players:\n    if distance between loop-player and player < 10:\n        send "Hello!" to loop-player`;
+            } else if (type === 'skull') {
+                code = `set {_head} to player head\nset {_n} to nbt compound of {_head}\nset string tag "SkullOwner;Id" of {_n} to uuid of player\nset string tag "SkullOwner;Name" of {_n} to name of player`;
+            } else if (type === 'command') {
+                code = `command /admincmd:\n    permission: admin.use\n    trigger:\n        send "&aExecuted."`;
+            }
+            document.getElementById('snip-out').value = code;
+        }
+    },
+
     async savePlayer() {
         const body = {
             uuid: document.getElementById('val-uuid').innerText,
