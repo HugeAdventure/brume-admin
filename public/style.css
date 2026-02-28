@@ -77,3 +77,24 @@ button.btn-accent { background: var(--accent); color: #fff; border: none; paddin
 .toast { background: var(--panel); border: 1px solid var(--border); padding: 15px 20px; border-radius: 8px; color: white; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-left: 4px solid var(--success); font-weight: 500; animation: slideIn 0.3s ease forwards; }
 .toast.error { border-left-color: var(--danger); }
 @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* --- SNIPPET LIBRARY --- */
+.category-pills { display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap; }
+.pill { background: var(--panel); border: 1px solid var(--border); color: var(--text-dim); padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+.pill:hover { background: rgba(255,255,255,0.05); color: white; }
+.pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+.snippet-masonry { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; align-items: start; }
+.snip-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: 0.2s; }
+.snip-card:hover { border-color: #555; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+
+.snip-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+.snip-title { font-weight: bold; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+.snip-badge { background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-family: 'JetBrains Mono'; color: var(--text-dim); }
+
+.snip-copy { background: var(--accent); border: none; color: white; border-radius: 4px; padding: 5px 10px; font-size: 11px; font-weight: bold; cursor: pointer; }
+.snip-copy:hover { filter: brightness(1.2); }
+
+.snip-body { padding: 0; }
+.snip-code { margin: 0; padding: 15px 20px; background: #050505; color: #aaffaa; font-family: 'JetBrains Mono', monospace; font-size: 12px; overflow-x: auto; white-space: pre; border-bottom: 1px solid var(--border); }
+.snip-desc { padding: 15px 20px; font-size: 12px; color: var(--text-dim); font-style: italic; background: rgba(255,255,255,0.02); }
