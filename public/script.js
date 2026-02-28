@@ -13,6 +13,7 @@ const ops = {
     init() {
         this.renderColorGrid();
         this.renderLibrary();
+        this.renderSnippets();
         // Dashboard is hidden, Auth is visible by default.
     },
 
