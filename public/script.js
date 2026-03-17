@@ -112,9 +112,10 @@ const app = {
     navigate(viewId) {
         document.querySelectorAll('.view-page').forEach(e => e.classList.remove('active'));
         document.getElementById(`view-${viewId}`).classList.add('active');
-
         document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
         if (event && event.target) event.target.classList.add('active');
+        // Close sidebar on mobile after navigation
+        if (window.innerWidth <= 768) this.closeSidebar();
     },
 
     toast(msg, type = "success") {
@@ -798,7 +799,26 @@ const app = {
         ]);
     },
 
-    // ════ GLOBAL SEARCH ════
+    // ════ MOBILE SIDEBAR ════
+    toggleSidebar() {
+        const sidebar = document.querySelector('aside.sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const btn = document.querySelector('.hamburger');
+        const isOpen = sidebar.classList.contains('open');
+        if (isOpen) {
+            this.closeSidebar();
+        } else {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            btn.classList.add('open');
+        }
+    },
+
+    closeSidebar() {
+        document.querySelector('aside.sidebar').classList.remove('open');
+        document.getElementById('sidebar-overlay').classList.remove('visible');
+        document.querySelector('.hamburger')?.classList.remove('open');
+    },
     _searchTimer: null,
     _searchFocusIndex: -1,
 
