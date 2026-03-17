@@ -3,99 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server Administration</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Brume Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div id="toast-container"></div>
 
-    <!-- LOGIN SCREEN -->
+    <!-- ═══ LOGIN ═══ -->
     <div id="auth-layer">
         <div class="login-card">
             <div class="brand-logo">
                 <div class="brand-icon"></div>
-                <h2>Brume Panel</h2>
+                <h2>Brume</h2>
             </div>
-            <p class="subtitle">Sign in to your account</p>
+            <p class="subtitle">// SECURE ADMIN ACCESS</p>
             <form id="login-form" onsubmit="app.login(event)">
                 <div class="input-group">
                     <label>Username</label>
-                    <input type="text" id="auth-user" required placeholder="e.g. Admin1">
+                    <input type="text" id="auth-user" required placeholder="enter username">
                 </div>
                 <div class="input-group">
                     <label>Password</label>
                     <input type="password" id="auth-pass" required placeholder="••••••••">
                 </div>
-                <button type="submit" class="btn-primary" id="login-btn">Sign In</button>
+                <button type="submit" class="btn-primary" id="login-btn">AUTHENTICATE</button>
             </form>
             <div id="auth-error"></div>
         </div>
     </div>
 
-    <!-- MAIN DASHBOARD -->
+    <!-- ═══ DASHBOARD ═══ -->
     <div id="dashboard-layer" style="display: none;">
-        
+
         <!-- SIDEBAR -->
         <aside class="sidebar">
             <div class="sidebar-header">
+                <div class="logo-hex"></div>
                 <h2>Brume</h2>
             </div>
 
-            <!-- USER PROFILE BLOCK -->
             <div class="user-profile">
                 <div class="avatar" id="profile-avatar">A</div>
                 <div class="user-info">
                     <h4 id="profile-name">Username</h4>
-                    <span id="profile-role" class="badge">Role</span>
+                    <span id="profile-role" class="badge">ROLE</span>
                 </div>
             </div>
-            
-            <div class="nav-section">
-                <span class="nav-label">MODERATION</span>
-                <!-- data-roles specifies who can see this tab -->
-                <button class="nav-link active" data-roles="admin,mod" onclick="app.navigate('overview')">Dashboard Overview</button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">Player Management</button>
-            </div>
-
-            <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('logs')">Audit Logs</button>
 
             <div class="nav-section">
-                <span class="nav-label">ADMINISTRATION</span>
-                <button class="nav-link" data-roles="admin" onclick="app.navigate('staff')">Staff Directory</button>
+                <span class="nav-label">Moderation</span>
+                <button class="nav-link active" data-roles="admin,mod" onclick="app.navigate('overview')">
+                    Overview
+                </button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">
+                    Player Database
+                </button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('logs')">
+                    Audit Logs
+                </button>
             </div>
 
             <div class="nav-section">
-                <span class="nav-label">DEVELOPMENT</span>
-                <button class="nav-link" data-roles="admin,dev" onclick="app.navigate('generator')">Item Architect</button>
+                <span class="nav-label">Administration</span>
+                <button class="nav-link" data-roles="admin" onclick="app.navigate('staff')">
+                    Staff Directory
+                </button>
             </div>
-            
+
+            <div class="nav-section">
+                <span class="nav-label">Development</span>
+                <button class="nav-link" data-roles="admin,dev" onclick="app.navigate('generator')">
+                    Item Architect
+                </button>
+            </div>
+
             <div class="sidebar-footer">
                 <button class="nav-link text-danger" onclick="app.logout()">Sign Out</button>
             </div>
         </aside>
 
-        <!-- CONTENT AREA -->
+        <!-- CONTENT -->
         <main>
-            <!-- DASHBOARD OVERVIEW -->
+
+            <!-- OVERVIEW -->
             <div id="view-overview" class="view-page active">
+                <div class="status-row">
+                    <span class="status-dot"></span>
+                    <span>SERVER ONLINE</span>
+                    <span class="sep">—</span>
+                    <span id="current-time">--:--:--</span>
+                </div>
                 <div class="page-header">
                     <h1>Server Overview</h1>
-                    <p>Live statistics and economy metrics.</p>
+                    <p>Live economy statistics and server metrics</p>
                 </div>
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <span class="stat-label">Total Registered Players</span>
-                        <div class="stat-value" id="stat-users">--</div>
+                        <div class="stat-card-icon">◈</div>
+                        <span class="stat-label">Registered Players</span>
+                        <div class="stat-value" id="stat-users">—</div>
                     </div>
                     <div class="stat-card">
-                        <span class="stat-label">Global Economy Vault</span>
-                        <div class="stat-value text-gold" id="stat-eco">--</div>
+                        <div class="stat-card-icon" style="background:var(--amber-dim);border-color:rgba(255,184,48,0.2);">◎</div>
+                        <span class="stat-label">Economy Vault</span>
+                        <div class="stat-value text-gold" id="stat-eco">—</div>
                     </div>
                     <div class="stat-card">
-                        <span class="stat-label">Top Wealth Player</span>
-                        <div class="stat-value text-purple" id="stat-rich">--</div>
+                        <div class="stat-card-icon" style="background:var(--purple-dim);border-color:rgba(176,107,255,0.2);">◆</div>
+                        <span class="stat-label">Wealthiest Player</span>
+                        <div class="stat-value text-purple" id="stat-rich">—</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Recent Activity</div>
+                    <div id="overview-logs-container">
+                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:8px 0;">Loading...</p>
                     </div>
                 </div>
             </div>
@@ -104,22 +129,24 @@
             <div id="view-player" class="view-page">
                 <div class="page-header">
                     <h1>Player Database</h1>
-                    <p>Search and manage player profiles and economy.</p>
+                    <p>Search, inspect and modify player records</p>
                 </div>
                 <div class="card">
+                    <div class="card-title">Search</div>
                     <div class="search-bar">
-                        <input type="text" id="p-search" placeholder="Enter Username or UUID...">
-                        <button class="btn-primary" onclick="app.lookupPlayer()">Search Database</button>
+                        <input type="text" id="p-search" placeholder="Username or UUID...">
+                        <button class="btn-primary" onclick="app.lookupPlayer()">QUERY DATABASE</button>
                     </div>
                 </div>
-                
-                <div id="p-editor" class="card" style="display:none; margin-top:20px;">
+
+                <div id="p-editor" class="card" style="display:none; margin-top:16px;">
                     <div class="profile-header">
                         <div>
                             <h2 id="val-name">PlayerName</h2>
-                            <p id="val-uuid" class="text-dim"></p>
+                            <div class="uuid-tag" id="val-uuid"></div>
                         </div>
                     </div>
+                    <div class="card-title">Edit Record</div>
                     <div class="form-grid">
                         <div class="input-group">
                             <label>Coin Balance</label>
@@ -131,33 +158,34 @@
                         </div>
                     </div>
                     <div class="form-actions">
-                        <button class="btn-primary" onclick="app.savePlayer()">Save Changes</button>
-                        <p class="text-dim" style="font-size: 12px; margin-left:15px;">Requires Admin privileges.</p>
+                        <button class="btn-primary" onclick="app.savePlayer()">SAVE CHANGES</button>
+                        <span class="note">// Admin privileges required</span>
                     </div>
                 </div>
             </div>
 
+            <!-- AUDIT LOGS -->
             <div id="view-logs" class="view-page">
                 <div class="page-header">
                     <h1>Audit Logs</h1>
-                    <p>Recent administrative actions taken on the server.</p>
+                    <p>Administrative actions log — last 50 entries</p>
                 </div>
-                <div class="card" style="padding: 0;">
+                <div class="card" style="padding:0;">
                     <div id="logs-table-container">
-                        <p style="padding: 24px; color: var(--text-dim);">Loading logs...</p>
+                        <p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading logs...</p>
                     </div>
                 </div>
             </div>
-            
+
             <!-- STAFF DIRECTORY -->
             <div id="view-staff" class="view-page">
                 <div class="page-header">
                     <h1>Staff Directory</h1>
-                    <p>Manage panel access and view authorized team members.</p>
+                    <p>Authorized panel users and access levels</p>
                 </div>
-                <div class="card" style="padding: 0;">
+                <div class="card" style="padding:0;">
                     <div id="staff-table-container">
-                        <p style="padding: 24px; color: var(--text-dim);">Loading staff...</p>
+                        <p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading staff...</p>
                     </div>
                 </div>
             </div>
@@ -166,17 +194,24 @@
             <div id="view-generator" class="view-page">
                 <div class="page-header">
                     <h1>Item Architect</h1>
-                    <p>Design and generate custom item configurations.</p>
+                    <p>Design and generate custom item configurations</p>
                 </div>
-                <!-- Re-insert your Item Architect HTML content here, wrapped in a cleaner .card -->
                 <div class="card">
-                    <p class="text-dim">Item architecture workspace is active. Add your generator form here.</p>
+                    <div class="card-title">Workspace</div>
+                    <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Item architecture workspace active — add your generator form here.</p>
                 </div>
             </div>
 
         </main>
     </div>
 
+    <script>
+        // Live clock
+        setInterval(() => {
+            const el = document.getElementById('current-time');
+            if (el) el.innerText = new Date().toLocaleTimeString('en-GB');
+        }, 1000);
+    </script>
     <script src="script.js"></script>
 </body>
 </html>
