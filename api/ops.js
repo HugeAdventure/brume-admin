@@ -265,15 +265,17 @@ export default async function handler(req, res) {
             const [rows] = await db.execute(
                 `SELECT
                     DATE_FORMAT(snapped_at, '%Y-%m-%d %H:00') as hour,
-                    total_coins, total_players, avg_coins, max_coins
+                    GREATEST(total_coins, 0) as total_coins,
+                    total_players,
+                    GREATEST(avg_coins, 0) as avg_coins,
+                    GREATEST(max_coins, 0) as max_coins
                  FROM economy_snapshots
                  WHERE snapped_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
                  ORDER BY snapped_at ASC`,
                 [days]
             );
-            // Also get all-time high
             const [[peak]] = await db.execute(
-                `SELECT MAX(total_coins) as peak_coins, MAX(total_players) as peak_players FROM economy_snapshots`
+                `SELECT GREATEST(MAX(total_coins), 0) as peak_coins, MAX(total_players) as peak_players FROM economy_snapshots`
             );
             return res.json({ snapshots: rows, peak });
         }
@@ -355,6 +357,139 @@ export default async function handler(req, res) {
                  FROM brume_stats`
             );
             return res.json({ byCoins, byPlaytime, byLevel, totals });
+        }
+
+        // ════ GLOBAL SEARCH ════
+        if (req.method === 'POST' && mode === 'search' && ROLES.modOrAbove.includes(user.role)) {
+            const { query } = req.body;
+            if (!query || query.length < 2) return res.json({ players: [], punishments: [], logs: [] });
+
+            const q = `%${query}%`;
+            const [players] = await db.execute(
+                `SELECT name, uuid, coins, level FROM brume_stats WHERE name LIKE ? OR uuid LIKE ? LIMIT 5`, [q, q]
+            );
+            const [punishments] = await db.execute(
+                `SELECT * FROM punishments WHERE target_name LIKE ? OR reason LIKE ? ORDER BY issued_at DESC LIMIT 5`, [q, q]
+            );
+            const [logs] = await db.execute(
+                `SELECT * FROM action_logs WHERE action LIKE ? OR username LIKE ? ORDER BY timestamp DESC LIMIT 5`, [q, q]
+            );
+            return res.json({ players, punishments, logs });
+        }
+
+        // ════ PLAYER PROFILE ════
+        if (req.method === 'POST' && mode === 'player_punishments' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [rows] = await db.execute(
+                `SELECT * FROM punishments WHERE target_name = ? ORDER BY issued_at DESC LIMIT 20`, [name]
+            );
+            return res.json(rows);
+        }
+
+        if (req.method === 'POST' && mode === 'player_sessions' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [rows] = await db.execute(
+                `SELECT joined_at, quit_at, duration_s FROM session_log WHERE name = ? ORDER BY joined_at DESC LIMIT 20`, [name]
+            );
+            return res.json(rows);
+        }
+
+        // Override analytics_player to support name-based lookup
+        if (mode === 'analytics_player' && ROLES.modOrAbove.includes(user.role)) {
+            let uuid = req.query.uuid;
+            const name = req.query.name;
+            if (uuid === 'lookup' && name) {
+                const [[p]] = await db.execute(`SELECT uuid FROM brume_stats WHERE name = ? LIMIT 1`, [decodeURIComponent(name)]);
+                uuid = p?.uuid;
+            }
+            if (!uuid) return res.json([]);
+            const [rows] = await db.execute(
+                `SELECT coins, level, xp, snapped_at FROM player_snapshots WHERE uuid = ? ORDER BY snapped_at ASC LIMIT 365`, [uuid]
+            );
+            return res.json(rows);
+        }
+
+        // ════ STAFF MANAGEMENT ════
+        if (req.method === 'POST' && mode === 'staff_create' && user.role === 'admin') {
+            const { username, password, role, invite_code } = req.body;
+
+            if (invite_code !== process.env.INVITE_CODE) {
+                return res.status(403).json({ error: "Invalid invite code." });
+            }
+            if (!['mod', 'dev', 'admin'].includes(role)) {
+                return res.status(400).json({ error: "Invalid role." });
+            }
+
+            const [existing] = await db.execute('SELECT id FROM admins WHERE username = ?', [username]);
+            if (existing.length) return res.status(400).json({ error: "Username already exists." });
+
+            // TODO: hash password with bcrypt before storing
+            await db.execute(
+                'INSERT INTO admins (username, password, role) VALUES (?, ?, ?)',
+                [username, password, role]
+            );
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Created staff account: ${username} (${role})`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'staff_update' && user.role === 'admin') {
+            const { id, role } = req.body;
+            if (!['mod', 'dev', 'admin'].includes(role)) return res.status(400).json({ error: "Invalid role." });
+            const [[target]] = await db.execute('SELECT username FROM admins WHERE id = ?', [id]);
+            if (!target) return res.status(404).json({ error: "User not found." });
+            await db.execute('UPDATE admins SET role = ? WHERE id = ?', [role, id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Changed ${target.username}'s role to ${role}`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'staff_reset_token' && user.role === 'admin') {
+            const { id } = req.body;
+            const newToken = crypto.randomBytes(32).toString('hex');
+            const [[target]] = await db.execute('SELECT username FROM admins WHERE id = ?', [id]);
+            if (!target) return res.status(404).json({ error: "User not found." });
+            await db.execute('UPDATE admins SET token = ? WHERE id = ?', [newToken, id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Reset session token for ${target.username}`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'staff_delete' && user.role === 'admin') {
+            const { id } = req.body;
+            if (id === user.id) return res.status(400).json({ error: "Cannot delete your own account." });
+            const [[target]] = await db.execute('SELECT username FROM admins WHERE id = ?', [id]);
+            if (!target) return res.status(404).json({ error: "User not found." });
+            await db.execute('DELETE FROM admins WHERE id = ?', [id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Deleted staff account: ${target.username}`]);
+            return res.json({ success: true });
+        }
+
+        // ════ ACCOUNT SETTINGS ════
+        if (req.method === 'POST' && mode === 'change_password') {
+            const { password } = req.body;
+            if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+            // TODO: hash with bcrypt
+            await db.execute('UPDATE admins SET password = ? WHERE id = ?', [password, user.id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Changed their password`]);
+            return res.json({ success: true });
+        }
+
+        // ════ DANGER ZONE ════
+        if (req.method === 'POST' && mode === 'purge_snapshots' && user.role === 'admin') {
+            await db.execute('TRUNCATE TABLE economy_snapshots');
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, 'Purged all economy snapshots']);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'purge_sessions' && user.role === 'admin') {
+            await db.execute('TRUNCATE TABLE session_log');
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, 'Purged all session logs']);
+            return res.json({ success: true });
         }
 
         return res.status(403).json({ error: "Forbidden: No permission." });
