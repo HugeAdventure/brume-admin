@@ -6,43 +6,29 @@ export default async function handler(req, res) {
     try {
         const { mode } = req.query;
 
-        // 1. Authentication Endpoint
         if (req.method === 'POST' && mode === 'login') {
             const { username, password } = req.body;
-            
             const [admins] = await db.execute('SELECT * FROM admins WHERE username = ?', [username]);
             const admin = admins[0];
 
-            if (!admin || admin.password !== password) {
-                return res.status(401).json({ error: "Invalid username or password" });
-            }
+            if (!admin || admin.password !== password) return res.status(401).json({ error: "Invalid username or password" });
 
             const token = Buffer.from(`${admin.username}-${Date.now()}`).toString('base64');
-            await db.execute('UPDATE admins SET token = ? WHERE id = ?',[token, admin.id]);
+            await db.execute('UPDATE admins SET token = ? WHERE id = ?', [token, admin.id]);
 
-            return res.json({
-                success: true,
-                token: token,
-                user: { username: admin.username, role: admin.role }
-            });
+            return res.json({ success: true, token: token, user: { username: admin.username, role: admin.role } });
         }
 
-        // --- MIDDLEWARE: VERIFY TOKEN FOR ALL OTHER ROUTES ---
         const authHeader = req.headers['authorization'];
         if (!authHeader) return res.status(401).json({ error: "Missing authorization token" });
         
-        const token = authHeader.split(' ')[1]; // "Bearer <token>"
+        const token = authHeader.split(' ')[1];
         const [session] = await db.execute('SELECT * FROM admins WHERE token = ?', [token]);
-        
-        if (session.length === 0) {
-            return res.status(401).json({ error: "Session expired or invalid" });
-        }
+        if (session.length === 0) return res.status(401).json({ error: "Session expired" });
         
         const currentUser = session[0];
 
-        // 2. Dashboard Stats (Allowed for: admin, mod)
-        if (mode === 'stats' &&['admin', 'mod'].includes(currentUser.role)) {
-            // UPDATED: 'players' -> 'brume_stats'
+        if (mode === 'stats' && ['admin', 'mod'].includes(currentUser.role)) {
             const [users] = await db.execute('SELECT COUNT(*) as c FROM brume_stats');
             const [money] = await db.execute('SELECT SUM(coins) as c FROM brume_stats');
             const [richest] = await db.execute('SELECT name, coins FROM brume_stats ORDER BY coins DESC LIMIT 1');
@@ -54,27 +40,38 @@ export default async function handler(req, res) {
             });
         }
 
-        // 3. Player Lookup (Allowed for: admin, mod)
         if (mode === 'lookup' && ['admin', 'mod'].includes(currentUser.role)) {
             const { query } = req.body;
-            // UPDATED: 'players' -> 'brume_stats'
             const [rows] = await db.execute('SELECT * FROM brume_stats WHERE name = ? OR uuid = ?', [query, query]);
             return res.json(rows[0] || { error: "Player not found" });
         }
 
-        // 4. Update Player (Allowed for: admin only)
         if (req.method === 'POST' && mode === 'update' && currentUser.role === 'admin') {
-            const { uuid, coins, level } = req.body;
-            // UPDATED: 'players' -> 'brume_stats'
+            const { uuid, name, coins, level } = req.body;
+            
             await db.execute('UPDATE brume_stats SET coins = ?, level = ? WHERE uuid = ?', [coins, level, uuid]);
-            return res.json({ success: true, message: `Updated UUID ${uuid}` });
+            
+            const actionText = `Updated ${name} (Coins: ${coins}, Lvl: ${level})`;
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)', [currentUser.username, actionText]);
+            
+            return res.json({ success: true });
         }
 
-        // Fallback for unauthorized role access
-        return res.status(403).json({ error: "Forbidden: You do not have permission for this action." });
+        if (mode === 'staff_list' && currentUser.role === 'admin') {
+            const [admins] = await db.execute('SELECT id, username, role, created_at FROM admins ORDER BY role ASC');
+            return res.json(admins);
+        }
+
+        if (mode === 'logs' && ['admin', 'mod'].includes(currentUser.role)) {
+            const [logs] = await db.execute('SELECT * FROM action_logs ORDER BY timestamp DESC LIMIT 50');
+            return res.json(logs);
+        }
+
+        return res.status(403).json({ error: "Forbidden: No permission." });
 
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error(error);
+        res.status(500).json({ error: "Database Error: " + error.message });
     } finally {
         await db.end();
     }
