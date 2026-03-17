@@ -76,6 +76,7 @@ const app = {
         badge.className = 'badge ' + this.session.user.role;
 
         this.applyRolePermissions();
+        this.loadSettings();
 
         if (['admin', 'mod'].includes(this.session.user.role)) {
             this.loadStats();
@@ -757,7 +758,6 @@ const app = {
         const fmt = this.fmtDuration.bind(this);
         const fmtC = this.fmtCoins.bind(this);
 
-        // Total sessions / avg playtime KPIs
         if (data.totals) {
             document.getElementById('a-avg-session').innerText = fmt(data.totals.avg_playtime_s);
             if (!document.getElementById('a-sessions').innerText || document.getElementById('a-sessions').innerText === '—') {
@@ -771,31 +771,456 @@ const app = {
                 <thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
                 <tbody>${rows.map((r, i) => `<tr>
                     <td style="color:var(--text-dim);font-family:'Space Mono',monospace;">#${i+1}</td>
-                    ${cols.slice(1).map(c => `<td ${c.style || ''}>${c.fmt ? c.fmt(r[c.key]) : r[c.key]}</td>`).join('')}
+                    ${cols.slice(1).map(c => `<td ${c.style||''}>${c.fmt ? c.fmt(r[c.key], r) : r[c.key]}</td>`).join('')}
                 </tr>`).join('')}</tbody>
             </table>`;
         };
 
+        const nameLink = (name) => `<span class="player-link" onclick="app.openProfileModal('${name}')">${name}</span>`;
+
         document.getElementById('lb-coins').innerHTML = makeTable(data.byCoins, [
             { label: '#' },
-            { label: 'Player', key: 'name', style: 'style="font-weight:600;"' },
+            { label: 'Player', key: 'name', fmt: v => nameLink(v) },
             { label: 'Coins', key: 'coins', fmt: v => `<span style="color:var(--amber)">${fmtC(v)} ◎</span>` },
             { label: 'Lv', key: 'level', style: 'style="color:var(--text-dim);"' },
         ]);
-
         document.getElementById('lb-playtime').innerHTML = makeTable(data.byPlaytime, [
             { label: '#' },
-            { label: 'Player', key: 'name', style: 'style="font-weight:600;"' },
+            { label: 'Player', key: 'name', fmt: v => nameLink(v) },
             { label: 'Playtime', key: 'total_playtime_s', fmt: v => `<span style="color:var(--green)">${fmt(v)}</span>` },
             { label: 'Sessions', key: 'session_count', style: 'style="color:var(--text-dim);"' },
         ]);
-
         document.getElementById('lb-level').innerHTML = makeTable(data.byLevel, [
             { label: '#' },
-            { label: 'Player', key: 'name', style: 'style="font-weight:600;"' },
+            { label: 'Player', key: 'name', fmt: v => nameLink(v) },
             { label: 'Level', key: 'level', fmt: v => `<span style="color:var(--purple)">${v}</span>` },
             { label: 'Coins', key: 'coins', fmt: v => fmtC(v), style: 'style="color:var(--text-dim);"' },
         ]);
+    },
+
+    // ════ GLOBAL SEARCH ════
+    _searchTimer: null,
+    _searchFocusIndex: -1,
+
+    openSearch() {
+        const overlay = document.getElementById('search-overlay');
+        overlay.style.display = 'flex';
+        setTimeout(() => document.getElementById('search-input').focus(), 50);
+        this._searchFocusIndex = -1;
+    },
+
+    closeSearch() {
+        document.getElementById('search-overlay').style.display = 'none';
+        document.getElementById('search-input').value = '';
+        document.getElementById('search-results').innerHTML = '<div style="padding:24px;text-align:center;font-family:\'Space Mono\',monospace;font-size:12px;color:var(--text-dim);">// Start typing to search...</div>';
+    },
+
+    searchKeydown(e) {
+        const items = document.querySelectorAll('.search-result-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this._searchFocusIndex = Math.min(this._searchFocusIndex + 1, items.length - 1);
+            items.forEach((el, i) => el.classList.toggle('focused', i === this._searchFocusIndex));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            this._searchFocusIndex = Math.max(this._searchFocusIndex - 1, 0);
+            items.forEach((el, i) => el.classList.toggle('focused', i === this._searchFocusIndex));
+        } else if (e.key === 'Enter' && this._searchFocusIndex >= 0) {
+            items[this._searchFocusIndex]?.click();
+        }
+    },
+
+    doSearch(q) {
+        clearTimeout(this._searchTimer);
+        if (!q || q.length < 2) return;
+        this._searchTimer = setTimeout(() => this._execSearch(q), 250);
+    },
+
+    async _execSearch(q) {
+        const res = await this.req('search', 'POST', { query: q });
+        if (res.error) return;
+
+        const el = document.getElementById('search-results');
+        let html = '';
+
+        if (res.players?.length) {
+            html += `<div class="search-result-group"><div class="search-result-label">Players</div>`;
+            res.players.forEach(p => {
+                html += `<div class="search-result-item" onclick="app.closeSearch();app.openProfileModal('${p.name}')">
+                    <div class="search-result-icon" style="color:var(--accent-bright);font-weight:700;">${p.name.charAt(0).toUpperCase()}</div>
+                    <div><div class="search-result-name">${p.name}</div>
+                    <div class="search-result-meta">Lv.${p.level} — ${Number(p.coins).toLocaleString()} ◎</div></div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        if (res.punishments?.length) {
+            html += `<div class="search-result-group"><div class="search-result-label">Punishments</div>`;
+            res.punishments.forEach(p => {
+                const typeClass = `ptype-${p.type}`;
+                html += `<div class="search-result-item" onclick="app.closeSearch();app.navigate('bans')">
+                    <div class="search-result-icon" style="color:var(--red);">⊘</div>
+                    <div><div class="search-result-name">${p.target_name} <span class="${typeClass}" style="margin-left:6px;">${p.type.toUpperCase()}</span></div>
+                    <div class="search-result-meta">${p.reason} — by ${p.issued_by}</div></div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        if (res.logs?.length) {
+            html += `<div class="search-result-group"><div class="search-result-label">Audit Logs</div>`;
+            res.logs.forEach(l => {
+                const date = new Date(l.timestamp).toLocaleDateString('en-GB');
+                html += `<div class="search-result-item" onclick="app.closeSearch();app.navigate('logs')">
+                    <div class="search-result-icon" style="color:var(--text-dim);">≡</div>
+                    <div><div class="search-result-name">${l.action}</div>
+                    <div class="search-result-meta">${l.username} — ${date}</div></div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        if (!html) html = `<div style="padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No results for "${q}"</div>`;
+        el.innerHTML = html;
+        this._searchFocusIndex = -1;
+    },
+
+    // ════ PLAYER PROFILE MODAL ════
+    _modalChart: null,
+
+    playerLink(name) {
+        return `<span class="player-link" onclick="app.openProfileModal('${name}')">${name}</span>`;
+    },
+
+    async openProfileModal(name) {
+        const modal = document.getElementById('profile-modal');
+        modal.style.display = 'flex';
+
+        // Reset
+        document.getElementById('modal-name').innerText = name;
+        document.getElementById('modal-avatar').innerText = name.charAt(0).toUpperCase();
+        document.getElementById('modal-uuid').innerText = 'Loading...';
+        document.getElementById('modal-coins').innerText = '—';
+        document.getElementById('modal-level').innerText = '—';
+        document.getElementById('modal-playtime').innerText = '—';
+        document.getElementById('modal-sessions').innerText = '—';
+        document.getElementById('modal-punishments').innerHTML = 'Loading...';
+        document.getElementById('modal-sessions-list').innerHTML = 'Loading...';
+
+        const [playerRes, historyRes, punishRes, sessionRes] = await Promise.all([
+            this.req('lookup', 'POST', { query: name }),
+            this.req(`analytics_player&uuid=lookup&name=${encodeURIComponent(name)}`),
+            this.req('player_punishments', 'POST', { name }),
+            this.req('player_sessions', 'POST', { name }),
+        ]);
+
+        if (playerRes.error) {
+            document.getElementById('modal-uuid').innerText = 'Player not found';
+            return;
+        }
+
+        document.getElementById('modal-uuid').innerText = playerRes.uuid;
+        document.getElementById('modal-coins').innerText = Number(playerRes.coins || 0).toLocaleString() + ' ◎';
+        document.getElementById('modal-level').innerText = playerRes.level || 1;
+        document.getElementById('modal-playtime').innerText = this.fmtDuration(playerRes.total_playtime_s);
+        document.getElementById('modal-sessions').innerText = playerRes.session_count || 0;
+
+        // Online badge
+        const badge = document.getElementById('modal-status-badge');
+        badge.innerHTML = playerRes.online
+            ? `<span style="font-family:'Space Mono',monospace;font-size:9px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,229,160,0.3);padding:2px 8px;border-radius:2px;letter-spacing:1px;"><span class="status-dot" style="width:5px;height:5px;margin-right:4px;"></span>ONLINE</span>`
+            : `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">OFFLINE</span>`;
+
+        // Store for quick action buttons
+        this._modalPlayer = playerRes;
+
+        // Coin history chart
+        if (this._modalChart) { this._modalChart.destroy(); this._modalChart = null; }
+        if (historyRes && !historyRes.error && historyRes.length > 1) {
+            const ctx = document.getElementById('modal-chart').getContext('2d');
+            const grad = ctx.createLinearGradient(0, 0, 0, 120);
+            grad.addColorStop(0, 'rgba(255,184,48,0.25)');
+            grad.addColorStop(1, 'rgba(255,184,48,0)');
+            this._modalChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: historyRes.map(r => new Date(r.snapped_at).toLocaleDateString('en-GB')),
+                    datasets: [{ data: historyRes.map(r => r.coins), borderColor: '#ffb830', backgroundColor: grad, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: true } }, scales: { x: { display: false }, y: { display: true, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 10 }, callback: v => this.fmtCoins(v) }, grid: { color: 'rgba(255,255,255,0.04)' } } } }
+            });
+        } else {
+            document.getElementById('modal-chart').parentElement.innerHTML = `<div style="height:120px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// Not enough history yet</div>`;
+        }
+
+        // Punishments
+        const pList = document.getElementById('modal-punishments');
+        if (!punishRes || punishRes.error || !punishRes.length) {
+            pList.innerHTML = `<span style="color:var(--green);">// Clean record</span>`;
+        } else {
+            pList.innerHTML = punishRes.map(p => {
+                const d = new Date(p.issued_at).toLocaleDateString('en-GB');
+                const col = p.type === 'ban' ? 'var(--red)' : p.type === 'tempban' ? 'var(--purple)' : 'var(--amber)';
+                return `<div style="padding:6px 0;border-bottom:1px solid var(--border-dim);">
+                    <span style="color:${col};text-transform:uppercase;letter-spacing:1px;">${p.type}</span>
+                    <span style="color:var(--text-dim);margin:0 6px;">·</span>${p.reason}
+                    <div style="color:var(--text-dim);font-size:10px;margin-top:2px;">${d} by ${p.issued_by}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // Recent sessions
+        const sList = document.getElementById('modal-sessions-list');
+        if (!sessionRes || sessionRes.error || !sessionRes.length) {
+            sList.innerHTML = `<span style="color:var(--text-dim);">// No sessions logged yet</span>`;
+        } else {
+            sList.innerHTML = sessionRes.slice(0, 8).map(s => {
+                const d = new Date(s.joined_at).toLocaleDateString('en-GB');
+                const dur = this.fmtDuration(s.duration_s);
+                return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border-dim);">
+                    <span style="color:var(--text-secondary);">${d}</span>
+                    <span style="color:var(--green);">${dur}</span>
+                </div>`;
+            }).join('');
+        }
+    },
+
+    closeProfileModal() {
+        document.getElementById('profile-modal').style.display = 'none';
+        if (this._modalChart) { this._modalChart.destroy(); this._modalChart = null; }
+    },
+
+    modalEditPlayer() {
+        if (!this._modalPlayer) return;
+        this.closeProfileModal();
+        document.getElementById('p-search').value = this._modalPlayer.name;
+        this.navigate('player');
+        this.lookupPlayer();
+    },
+
+    modalBanPlayer() {
+        if (!this._modalPlayer) return;
+        this.closeProfileModal();
+        document.getElementById('ban-target').value = this._modalPlayer.name;
+        document.getElementById('ban-type').value = 'ban';
+        this.navigate('bans');
+    },
+
+    // ════ STAFF MANAGEMENT ════
+    async loadStaff() {
+        const res = await this.req('staff_list');
+        if (res.error) return;
+
+        let html = `<table class="data-table">
+            <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Actions</th></tr></thead><tbody>`;
+
+        res.forEach(s => {
+            const isSelf = s.username === this.session.user.username;
+            html += `<tr>
+                <td class="mono" style="color:var(--text-dim);">#${s.id}</td>
+                <td style="font-weight:600;">${s.username}${isSelf ? ' <span style="font-family:\'Space Mono\',monospace;font-size:9px;color:var(--accent);background:var(--accent-glow);padding:2px 6px;border-radius:2px;">YOU</span>' : ''}</td>
+                <td><span class="badge ${s.role}">${s.role}</span></td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        <select onchange="app.changeStaffRole(${s.id},'${s.username}',this.value)" style="background:var(--bg-base);border:1px solid var(--border-dim);color:var(--text-secondary);padding:4px 8px;border-radius:2px;font-family:'Space Mono',monospace;font-size:10px;width:auto;" ${isSelf ? 'disabled' : ''}>
+                            <option value="mod" ${s.role==='mod'?'selected':''}>Mod</option>
+                            <option value="dev" ${s.role==='dev'?'selected':''}>Dev</option>
+                            <option value="admin" ${s.role==='admin'?'selected':''}>Admin</option>
+                        </select>
+                        <button class="btn-sm" onclick="app.resetStaffToken(${s.id},'${s.username}')">RESET TOKEN</button>
+                        ${!isSelf ? `<button class="btn-sm btn-red" onclick="app.deleteStaff(${s.id},'${s.username}')">DELETE</button>` : ''}
+                    </div>
+                </td>
+            </tr>`;
+        });
+
+        html += `</tbody></table>`;
+        document.getElementById('staff-table-container').innerHTML = html;
+    },
+
+    async createStaff() {
+        const username = document.getElementById('new-staff-user').value.trim();
+        const password = document.getElementById('new-staff-pass').value;
+        const role     = document.getElementById('new-staff-role').value;
+        const invite   = document.getElementById('new-staff-invite').value.trim();
+
+        if (!username || !password || !invite) return this.toast("All fields required.", "error");
+
+        const res = await this.req('staff_create', 'POST', { username, password, role, invite_code: invite });
+        if (res.error) return this.toast(res.error, "error");
+
+        this.toast(`Account created for ${username}.`);
+        document.getElementById('new-staff-user').value = '';
+        document.getElementById('new-staff-pass').value = '';
+        document.getElementById('new-staff-invite').value = '';
+        this.loadStaff();
+    },
+
+    async changeStaffRole(id, username, role) {
+        const ok = await this.confirm(`Change ${username}'s role to ${role.toUpperCase()}?`);
+        if (!ok) return;
+        const res = await this.req('staff_update', 'POST', { id, role });
+        if (res.error) return this.toast(res.error, "error");
+        this.toast(`${username} is now ${role}.`);
+        this.loadStaff();
+    },
+
+    async resetStaffToken(id, username) {
+        const ok = await this.confirm(`Reset ${username}'s session token? They will be logged out.`);
+        if (!ok) return;
+        const res = await this.req('staff_reset_token', 'POST', { id });
+        if (res.error) return this.toast(res.error, "error");
+        this.toast(`Token reset for ${username}.`);
+    },
+
+    async deleteStaff(id, username) {
+        const ok = await this.confirm(`Permanently delete ${username}'s account? This cannot be undone.`, true);
+        if (!ok) return;
+        const res = await this.req('staff_delete', 'POST', { id });
+        if (res.error) return this.toast(res.error, "error");
+        this.toast(`${username} deleted.`);
+        this.loadStaff();
+    },
+
+    // ════ SETTINGS ════
+    _settings: {},
+
+    loadSettings() {
+        const saved = localStorage.getItem('brume_settings');
+        this._settings = saved ? JSON.parse(saved) : {
+            theme: 'dark', accent: 'indigo', textSize: 14,
+            dateFormat: 'en-GB', sidebar: 'expanded', anomalyThreshold: 20
+        };
+        this.applySettings();
+        this.renderSettingsUI();
+    },
+
+    saveSettings() {
+        localStorage.setItem('brume_settings', JSON.stringify(this._settings));
+    },
+
+    applySettings() {
+        const s = this._settings;
+        const body = document.body;
+
+        // Theme
+        body.classList.remove('theme-dark', 'theme-midnight', 'theme-light');
+        if (s.theme !== 'dark') body.classList.add(`theme-${s.theme}`);
+
+        // Accent
+        body.classList.remove('accent-indigo', 'accent-amber', 'accent-rose');
+        body.classList.add(`accent-${s.accent}`);
+
+        // Text size
+        document.documentElement.style.setProperty('--base-font-size', (s.textSize || 14) + 'px');
+        document.querySelector('main') && (document.querySelector('main').style.fontSize = (s.textSize || 14) + 'px');
+
+        // Sidebar
+        body.classList.toggle('sidebar-compact', s.sidebar === 'compact');
+    },
+
+    renderSettingsUI() {
+        const s = this._settings;
+
+        // Theme buttons
+        document.querySelectorAll('.theme-btn[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === s.theme));
+        document.querySelectorAll('.theme-btn[data-fmt]').forEach(b => b.classList.toggle('active', b.dataset.fmt === s.dateFormat));
+        document.querySelectorAll('.theme-btn[data-sidebar]').forEach(b => b.classList.toggle('active', b.dataset.sidebar === s.sidebar));
+
+        // Accent swatches
+        document.querySelectorAll('.accent-swatch').forEach(b => b.classList.toggle('active', b.dataset.accent === s.accent));
+
+        // Sliders
+        const ts = document.getElementById('text-size-slider');
+        if (ts) { ts.value = s.textSize; document.getElementById('text-size-label').innerText = s.textSize + 'px'; }
+        const as = document.getElementById('anomaly-slider');
+        if (as) { as.value = s.anomalyThreshold; document.getElementById('anomaly-label').innerText = s.anomalyThreshold + '%'; }
+    },
+
+    setTheme(theme, btn) {
+        this._settings.theme = theme;
+        this.saveSettings(); this.applySettings();
+        document.querySelectorAll('.theme-btn[data-theme]').forEach(b => b.classList.toggle('active', b === btn));
+    },
+
+    setAccent(accent, btn) {
+        this._settings.accent = accent;
+        this.saveSettings(); this.applySettings();
+        document.querySelectorAll('.accent-swatch').forEach(b => b.classList.toggle('active', b === btn));
+    },
+
+    setTextSize(v) {
+        this._settings.textSize = parseInt(v);
+        document.getElementById('text-size-label').innerText = v + 'px';
+        this.saveSettings(); this.applySettings();
+    },
+
+    setDateFormat(fmt, btn) {
+        this._settings.dateFormat = fmt;
+        this.saveSettings();
+        document.querySelectorAll('.theme-btn[data-fmt]').forEach(b => b.classList.toggle('active', b === btn));
+    },
+
+    setSidebar(mode, btn) {
+        this._settings.sidebar = mode;
+        this.saveSettings(); this.applySettings();
+        document.querySelectorAll('.theme-btn[data-sidebar]').forEach(b => b.classList.toggle('active', b === btn));
+    },
+
+    setAnomalyThreshold(v) {
+        this._settings.anomalyThreshold = parseInt(v);
+        document.getElementById('anomaly-label').innerText = v + '%';
+        this.saveSettings();
+    },
+
+    async changePassword() {
+        const p1 = document.getElementById('change-pass').value;
+        const p2 = document.getElementById('change-pass-confirm').value;
+        if (!p1) return this.toast("Enter a new password.", "error");
+        if (p1 !== p2) return this.toast("Passwords don't match.", "error");
+        const res = await this.req('change_password', 'POST', { password: p1 });
+        if (res.error) return this.toast(res.error, "error");
+        this.toast("Password updated.");
+        document.getElementById('change-pass').value = '';
+        document.getElementById('change-pass-confirm').value = '';
+    },
+
+    async clearEconomySnapshots() {
+        const ok = await this.confirm('Permanently delete ALL economy snapshots? Charts will be empty until new data accumulates.', true);
+        if (!ok) return;
+        const res = await this.req('purge_snapshots', 'POST', {});
+        if (res.error) return this.toast(res.error, "error");
+        this.toast("Economy snapshots purged.");
+    },
+
+    async clearSessionLogs() {
+        const ok = await this.confirm('Permanently delete ALL session logs? Heatmap and retention data will reset.', true);
+        if (!ok) return;
+        const res = await this.req('purge_sessions', 'POST', {});
+        if (res.error) return this.toast(res.error, "error");
+        this.toast("Session logs purged.");
+    },
+
+    // ════ CONFIRM MODAL ════
+    _confirmResolve: null,
+
+    confirm(message, danger = false) {
+        return new Promise(resolve => {
+            const modal = document.getElementById('confirm-modal');
+            document.getElementById('confirm-body').innerText = message;
+            const btn = document.getElementById('confirm-ok');
+            btn.style.background = danger ? 'var(--red)' : 'var(--accent)';
+            modal.style.display = 'flex';
+            this._confirmResolve = (val) => {
+                modal.style.display = 'none';
+                resolve(val);
+            };
+        });
+    },
+
+    closeConfirm() {
+        if (this._confirmResolve) this._confirmResolve(false);
     }
 };
 
@@ -810,5 +1235,7 @@ window.onload = () => {
         if (viewId === 'bans') app.loadBans();
         if (viewId === 'console') app.initConsole();
         if (viewId === 'analytics') app.loadAnalytics();
+        if (viewId === 'staff') app.loadStaff();
+        if (viewId === 'settings') app.renderSettingsUI();
     };
 };
