@@ -2,310 +2,143 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Brume OS // Enterprise</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
-    <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Administration</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- TOAST CONTAINER -->
     <div id="toast-container"></div>
 
-    <!-- COLOR MODAL -->
-    <div id="color-modal" class="modal-layer" style="display:none;" onclick="if(event.target===this) ops.closeColor()">
-        <div class="modal-card">
-            <h3>Select Palette</h3>
-            <div class="color-grid" id="rarity-colors"></div>
-            <div class="picker-row">
-                <input type="text" id="manual-hex" placeholder="<#FFFFFF>">
-                <button class="btn-accent" style="width:auto; margin:0;" onclick="ops.applyColor()">SET</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 1. LOGIN SCREEN -->
+    <!-- LOGIN SCREEN -->
     <div id="auth-layer">
         <div class="login-card">
-            <div class="logo">BRUME <span>OS</span></div>
-            <p>Authorized Personnel Only</p>
-            <input type="password" id="root-key" placeholder="Enter Access Key">
-            <button class="btn-accent" onclick="ops.login()" id="login-btn">Authenticate</button>
-            <div id="auth-msg" style="margin-top: 15px; font-weight: bold;"></div>
+            <div class="brand-logo">
+                <div class="brand-icon"></div>
+                <h2>Brume Panel</h2>
+            </div>
+            <p class="subtitle">Sign in to your account</p>
+            <form id="login-form" onsubmit="app.login(event)">
+                <div class="input-group">
+                    <label>Username</label>
+                    <input type="text" id="auth-user" required placeholder="e.g. Admin1">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="auth-pass" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn-primary" id="login-btn">Sign In</button>
+            </form>
+            <div id="auth-error"></div>
         </div>
     </div>
 
-    <!-- 2. MAIN DASHBOARD -->
+    <!-- MAIN DASHBOARD -->
     <div id="dashboard-layer" style="display: none;">
         
         <!-- SIDEBAR -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h2>BRUME</h2>
-                <div class="connection-status"><span class="dot"></span> Online</div>
+                <h2>Brume</h2>
+            </div>
+
+            <!-- USER PROFILE BLOCK -->
+            <div class="user-profile">
+                <div class="avatar" id="profile-avatar">A</div>
+                <div class="user-info">
+                    <h4 id="profile-name">Username</h4>
+                    <span id="profile-role" class="badge">Role</span>
+                </div>
             </div>
             
-            <div class="nav-group">DATABASE</div>
-            <nav>
-                <button class="nav-link active" onclick="ops.navigate('overview')">Overview</button>
-                <button class="nav-link" onclick="ops.navigate('player')">Player Manager</button>
-            </nav>
+            <div class="nav-section">
+                <span class="nav-label">MODERATION</span>
+                <!-- data-roles specifies who can see this tab -->
+                <button class="nav-link active" data-roles="admin,mod" onclick="app.navigate('overview')">Dashboard Overview</button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">Player Management</button>
+            </div>
 
-            <div class="nav-group">ENGINEERING</div>
-            <nav>
-                <button class="nav-link" onclick="ops.navigate('generator')">Item Architect</button>
-                <button class="nav-link" onclick="ops.navigate('snippets')">Snippet Library</button>
-            </nav>
-
-            <div class="nav-group">DEV TOOLS</div>
-            <nav>
-                <button class="nav-link" onclick="ops.navigate('tool-grad')">Gradient Engine</button>
-                <button class="nav-link" onclick="ops.navigate('tool-math')">RPG Math & XP</button>
-                <button class="nav-link" onclick="ops.navigate('tool-rng')">Loot Simulator</button>
-                <button class="nav-link" onclick="ops.navigate('tool-mm')">MiniMessage</button>
-            </nav>
+            <div class="nav-section">
+                <span class="nav-label">DEVELOPMENT</span>
+                <button class="nav-link" data-roles="admin,dev" onclick="app.navigate('generator')">Item Architect</button>
+            </div>
             
-            <button class="logout-btn" onclick="location.reload()">End Session</button>
+            <div class="sidebar-footer">
+                <button class="nav-link text-danger" onclick="app.logout()">Sign Out</button>
+            </div>
         </aside>
 
         <!-- CONTENT AREA -->
         <main>
-            <!-- OVERVIEW -->
+            <!-- DASHBOARD OVERVIEW -->
             <div id="view-overview" class="view-page active">
-                <h1>Global Telemetry</h1>
+                <div class="page-header">
+                    <h1>Server Overview</h1>
+                    <p>Live statistics and economy metrics.</p>
+                </div>
                 <div class="stats-grid">
-                    <div class="stat-card"><h3>Total Players</h3><div class="value" id="stat-users">--</div></div>
-                    <div class="stat-card"><h3>Economy Value</h3><div class="value gold" id="stat-eco">--</div></div>
-                    <div class="stat-card"><h3>Top Player</h3><div class="value purple" id="stat-rich">--</div></div>
+                    <div class="stat-card">
+                        <span class="stat-label">Total Registered Players</span>
+                        <div class="stat-value" id="stat-users">--</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Global Economy Vault</span>
+                        <div class="stat-value text-gold" id="stat-eco">--</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Top Wealth Player</span>
+                        <div class="stat-value text-purple" id="stat-rich">--</div>
+                    </div>
                 </div>
             </div>
 
             <!-- PLAYER MANAGER -->
             <div id="view-player" class="view-page">
-                <h1>Player Database</h1>
-                <div class="search-bar">
-                    <input type="text" id="p-search" placeholder="Username or UUID...">
-                    <button class="btn-accent" style="width:auto;" onclick="ops.lookup()">Search</button>
+                <div class="page-header">
+                    <h1>Player Database</h1>
+                    <p>Search and manage player profiles and economy.</p>
                 </div>
-                <div id="p-editor" class="card" style="display:none; margin-top:20px;">
-                    <h2 id="val-name">Player</h2>
-                    <p id="val-uuid" style="color:var(--text-dim); font-family:monospace;"></p>
-                    <div class="form-row">
-                        <div class="input-group"><label>Coins</label><input type="number" id="inp-coins"></div>
-                        <div class="input-group"><label>Level</label><input type="number" id="inp-level"></div>
-                    </div>
-                    <button class="btn-primary" onclick="ops.savePlayer()">Commit Changes</button>
-                </div>
-            </div>
-
-            <!-- ITEM ARCHITECT (With Library) -->
-            <div id="view-generator" class="view-page">
-                <div class="panel-header">
-                    <h1>Item Architect</h1>
-                    <div class="actions">
-                        <button class="action-btn" onclick="ops.resetGen()">Clear Form</button>
+                <div class="card">
+                    <div class="search-bar">
+                        <input type="text" id="p-search" placeholder="Enter Username or UUID...">
+                        <button class="btn-primary" onclick="app.lookupPlayer()">Search Database</button>
                     </div>
                 </div>
-
-                <div class="architect-layout">
-                    <!-- LEFT: FORM -->
-                    <div class="architect-form">
-                        <h3>Identity</h3>
-                        <div class="form-row">
-                            <input type="text" id="gen-id" placeholder="ID (e.g. VOID_SWORD)" oninput="ops.live()">
-                            <input type="text" id="gen-mat" placeholder="Material (e.g. iron sword)" oninput="ops.live()">
-                        </div>
-                        <div class="color-input-group">
-                            <div class="swatch" id="swatch-name" style="background:#fff" onclick="ops.openColor('gen-name')"></div>
-                            <input type="text" id="gen-name" placeholder="Display Name" oninput="ops.live()">
-                        </div>
-                        <div class="form-row">
-                            <select id="gen-tier" onchange="ops.live()">
-                                <option value="COMMON">Common</option>
-                                <option value="UNCOMMON">Uncommon</option>
-                                <option value="RARE">Rare</option>
-                                <option value="EPIC">Epic</option>
-                                <option value="LEGENDARY">Legendary</option>
-                                <option value="MYTHIC">Mythic</option>
-                                <option value="EXCLUSIVE">Exclusive</option>
-                            </select>
-                            <select id="gen-type" onchange="ops.live()">
-                                <option value="WEAPON">Weapon</option>
-                                <option value="ARMOR">Armor</option>
-                                <option value="TOOL">Tool</option>
-                                <option value="MATERIAL">Material</option>
-                                <option value="ACCESSORY">Accessory</option>
-                            </select>
-                        </div>
-
-                        <h3>Stats</h3>
-                        <div class="form-row three">
-                            <input type="number" id="gen-dmg" placeholder="Damage" oninput="ops.live()">
-                            <input type="number" id="gen-str" placeholder="Strength" oninput="ops.live()">
-                            <input type="number" id="gen-crit" placeholder="Crit %" oninput="ops.live()">
-                        </div>
-                        <div class="form-row three">
-                            <input type="number" id="gen-hp" placeholder="Health" oninput="ops.live()">
-                            <input type="number" id="gen-def" placeholder="Defense" oninput="ops.live()">
-                            <input type="number" id="gen-spd" placeholder="Speed" oninput="ops.live()">
-                        </div>
-                        <div class="form-row">
-                            <input type="number" id="gen-mspd" placeholder="Mining Speed" oninput="ops.live()">
-                            <input type="number" id="gen-mfort" placeholder="Mining Fortune" oninput="ops.live()">
-                        </div>
-
-                        <h3>Content & Lore</h3>
-                        <div class="color-input-group">
-                            <div class="swatch" id="swatch-ab" style="background:#FFAA00" onclick="ops.openColor('gen-ab-name')"></div>
-                            <input type="text" id="gen-ab-name" placeholder="Ability Name" oninput="ops.live()">
-                        </div>
-                        <textarea id="gen-ab-desc" placeholder="Ability Description (Use | for lines)" oninput="ops.live()"></textarea>
-                        <textarea id="gen-flavor" placeholder="Flavor Text" oninput="ops.live()"></textarea>
-
-                        <h3>Palette</h3>
-                        <div class="form-row">
-                            <div class="color-input-group">
-                                <div class="swatch" id="swatch-p1" style="background:#fff" onclick="ops.openColor('gen-p1')"></div>
-                                <input type="text" id="gen-p1" value="<#FFFFFF>" placeholder="Primary" oninput="ops.live()">
-                            </div>
-                            <div class="color-input-group">
-                                <div class="swatch" id="swatch-p2" style="background:#777" onclick="ops.openColor('gen-p2')"></div>
-                                <input type="text" id="gen-p2" value="<#777777>" placeholder="Secondary" oninput="ops.live()">
-                            </div>
-                        </div>
-                        
-                        <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
-                            <input type="checkbox" id="gen-enchants" onchange="ops.live()" checked style="width:auto;"> 
-                            <label for="gen-enchants">Has Enchants</label>
-                        </div>
-
-                        <div class="form-row" style="margin-top:20px;">
-                            <button class="btn-accent" onclick="ops.copyCode()">Copy Skript</button>
-                            <button class="btn-primary" onclick="ops.saveToLibrary()">Save to Library</button>
-                        </div>
-                    </div>
-
-                    <!-- RIGHT: PREVIEW, LIBRARY, CODE -->
-                    <div class="architect-output">
-                        <h3>Live Preview</h3>
-                        <div id="tooltip-preview" class="minecraft-tooltip">
-                            <div class="mc-name" id="prev-name">Item Name</div>
-                            <div class="mc-lore" id="prev-lore"></div>
-                        </div>
-
-                        <h3 style="margin-top:20px;">Local Library</h3>
-                        <div class="card" style="padding:10px; max-height:200px; overflow-y:auto;" id="library-list">
-                            <!-- Injected by JS -->
-                        </div>
-
-                        <h3 style="margin-top:20px;">Output Code</h3>
-                        <textarea id="gen-out" readonly onclick="this.select()" style="height:200px;"></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <div id="view-snippets" class="view-page">
-                <h1>Snippet Library</h1>
-                <p style="color:var(--text-dim); margin-bottom: 20px;">Standardized code blocks for the Brume Engine.</p>
                 
-                <div class="search-bar" style="margin-bottom: 15px;">
-                    <input type="text" id="snip-search" placeholder="Search snippets..." onkeyup="ops.filterSnippets()">
-                </div>
-                <div class="category-pills" id="snip-cats">
-                    <button class="pill active" onclick="ops.filterCat('ALL')">ALL</button>
-                    <button class="pill" onclick="ops.filterCat('GUI')">GUI</button>
-                    <button class="pill" onclick="ops.filterCat('NBT')">NBT</button>
-                    <button class="pill" onclick="ops.filterCat('VISUALS')">VISUALS</button>
-                    <button class="pill" onclick="ops.filterCat('MATH')">MATH / LOGIC</button>
-                    <button class="pill" onclick="ops.filterCat('DB')">DATABASE</button>
-                </div>
-
-                <div class="snippet-masonry" id="snippet-container">
-                    <!-- JS Injects Snippets Here -->
-                </div>
-            </div>
-
-            <!-- TOOLS: GRADIENT -->
-            <div id="view-tool-grad" class="view-page">
-                <h1>Gradient Engine</h1>
-                <div class="card" style="max-width: 600px;">
-                    <input type="text" id="grad-text" placeholder="Your Text Here" oninput="ops.tools.grad()">
-                    <div class="form-row" style="margin-top:15px;">
-                        <input type="text" id="grad-c1" value="<#55FFFF>" placeholder="Hex 1" oninput="ops.tools.grad()">
-                        <input type="text" id="grad-c2" value="<#51559B>" placeholder="Hex 2" oninput="ops.tools.grad()">
-                    </div>
-                    <div class="preview-box" id="grad-preview">Preview</div>
-                    <textarea id="grad-out" readonly onclick="this.select()" style="height:60px; margin-top:15px;"></textarea>
-                </div>
-            </div>
-
-            <!-- TOOLS: MATH -->
-            <div id="view-tool-math" class="view-page">
-                <h1>RPG Math & XP</h1>
-                <div class="card" style="max-width: 600px;">
-                    <div class="input-group">
-                        <label>Target Level</label>
-                        <input type="number" id="math-lvl" value="10" oninput="ops.tools.xp()">
-                    </div>
-                    <div class="math-results" style="margin:20px 0; background:rgba(0,0,0,0.3); padding:20px; border-radius:8px;">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                            <span>XP Required for Next Level:</span> <b id="out-req" style="color:#f1c40f">0 XP</b>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                            <span>Cumulative XP from 0:</span> <b id="out-total" style="color:#9b59b6">0 XP</b>
-                        </div>
-                        <div style="display:flex; justify-content:space-between;">
-                            <span>Damage Mitigated (Defense):</span> <b id="out-def" style="color:#2ecc71">0%</b>
+                <div id="p-editor" class="card" style="display:none; margin-top:20px;">
+                    <div class="profile-header">
+                        <div>
+                            <h2 id="val-name">PlayerName</h2>
+                            <p id="val-uuid" class="text-dim"></p>
                         </div>
                     </div>
-                    <div class="input-group">
-                        <label>Test Defense Value</label>
-                        <input type="number" id="math-def" value="100" oninput="ops.tools.xp()">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label>Coin Balance</label>
+                            <input type="number" id="inp-coins">
+                        </div>
+                        <div class="input-group">
+                            <label>Player Level</label>
+                            <input type="number" id="inp-level">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-primary" onclick="app.savePlayer()">Save Changes</button>
+                        <p class="text-dim" style="font-size: 12px; margin-left:15px;">Requires Admin privileges.</p>
                     </div>
                 </div>
             </div>
 
-            <!-- TOOLS: RNG SIMULATOR -->
-            <div id="view-tool-rng" class="view-page">
-                <h1>Loot Simulator</h1>
-                <div class="card" style="max-width: 600px;">
-                    <div class="input-group" style="margin-bottom:15px;">
-                        <label>Drop Chance (1 in X)</label>
-                        <input type="number" id="rng-chance" value="1000000">
-                    </div>
-                    <div class="input-group" style="margin-bottom:20px;">
-                        <label>Number of Attempts (Pulls)</label>
-                        <input type="number" id="rng-attempts" value="500000">
-                    </div>
-                    <button class="btn-accent" onclick="ops.tools.simulateRNG()">Run Simulation</button>
-                    <div id="rng-result" style="margin-top:20px; background:#000; padding:20px; font-family:monospace; color:#aaffaa; border-radius:8px;">
-                        Awaiting parameters...
-                    </div>
+            <!-- ITEM ARCHITECT -->
+            <div id="view-generator" class="view-page">
+                <div class="page-header">
+                    <h1>Item Architect</h1>
+                    <p>Design and generate custom item configurations.</p>
                 </div>
-            </div>
-
-            <!-- TOOLS: MINIMESSAGE -->
-            <div id="view-tool-mm" class="view-page">
-                <h1>Legacy to MiniMessage</h1>
-                <div class="card" style="max-width: 600px;">
-                    <input type="text" id="mm-in" placeholder="&c&lLegacy Text..." oninput="ops.tools.mm()">
-                    <div class="preview-box" id="mm-preview" style="margin:20px 0;">Preview</div>
-                    <textarea id="mm-out" readonly onclick="this.select()" style="height:100px;"></textarea>
-                </div>
-            </div>
-
-            <!-- TOOLS: SNIPPETS -->
-            <div id="view-tool-snip" class="view-page">
-                <h1>Snippet Library</h1>
-                <div class="card" style="max-width: 800px;">
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:20px;">
-                        <button class="action-btn" onclick="ops.tools.snip('gui')">Metadata GUI</button>
-                        <button class="action-btn" onclick="ops.tools.snip('nbt')">Read NBT Item</button>
-                        <button class="action-btn" onclick="ops.tools.snip('loop')">Proximity Loop</button>
-                        <button class="action-btn" onclick="ops.tools.snip('packet')">Packet Structure</button>
-                        <button class="action-btn" onclick="ops.tools.snip('db')">Async Database</button>
-                    </div>
-                    <textarea id="snip-out" readonly onclick="this.select()" style="height:300px;" placeholder="Code will appear here..."></textarea>
+                <!-- Re-insert your Item Architect HTML content here, wrapped in a cleaner .card -->
+                <div class="card">
+                    <p class="text-dim">Item architecture workspace is active. Add your generator form here.</p>
                 </div>
             </div>
 
