@@ -228,7 +228,219 @@ const app = {
         document.getElementById('val-uuid').innerText = res.uuid;
         document.getElementById('inp-coins').value = res.coins;
         document.getElementById('inp-level').value = res.level;
+    },
+
+    // ── ONLINE PLAYERS ──
+    _playersInterval: null,
+
+    async loadOnlinePlayers() {
+        const res = await this.req('online_players');
+        const container = document.getElementById('online-players-container');
+        const badge = document.getElementById('online-count-badge');
+
+        if (res.error) {
+            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
+            return;
+        }
+
+        const players = res || [];
+        badge.innerText = `${players.length} ONLINE`;
+
+        if (players.length === 0) {
+            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No players online.</p>`;
+            return;
+        }
+
+        container.innerHTML = players.map(p => `
+            <div class="player-row">
+                <div class="player-avatar-sm">${p.name.charAt(0).toUpperCase()}</div>
+                <span class="player-row-name">${p.name}</span>
+                <span class="player-row-meta" style="color:var(--text-dim);">${p.uuid ? p.uuid.substring(0,8) + '...' : ''}</span>
+                <span class="player-row-meta">Lv.${p.level || '?'}</span>
+                <span class="player-row-meta text-gold">${Number(p.coins || 0).toLocaleString()} ◎</span>
+                <div class="player-row-actions">
+                    <button class="btn-sm" onclick="app.quickBan('${p.name}')">BAN</button>
+                    <button class="btn-sm" onclick="app.quickWarn('${p.name}')">WARN</button>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    startPlayerPolling() {
+        this.loadOnlinePlayers();
+        if (this._playersInterval) clearInterval(this._playersInterval);
+        this._playersInterval = setInterval(() => this.loadOnlinePlayers(), 15000);
+    },
+
+    quickBan(name) {
+        document.getElementById('ban-target').value = name;
+        document.getElementById('ban-type').value = 'ban';
+        this.navigate('bans');
+        document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
+    },
+
+    quickWarn(name) {
+        document.getElementById('ban-target').value = name;
+        document.getElementById('ban-type').value = 'warn';
+        this.navigate('bans');
+        document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
+    },
+
+    toggleDuration() {
+        const type = document.getElementById('ban-type').value;
+        const group = document.getElementById('duration-group');
+        group.style.opacity = type === 'tempban' ? '1' : '0.3';
+        group.style.pointerEvents = type === 'tempban' ? 'auto' : 'none';
+    },
+
+    // ── BANS & WARNINGS ──
+    async issuePunishment() {
+        const target = document.getElementById('ban-target').value.trim();
+        const type = document.getElementById('ban-type').value;
+        const reason = document.getElementById('ban-reason').value.trim();
+        const duration = document.getElementById('ban-duration').value.trim();
+
+        if (!target || !reason) return this.toast("Player name and reason required.", "error");
+
+        const res = await this.req('punish', 'POST', { target, type, reason, duration });
+        if (res.error) return this.toast(res.error, "error");
+
+        this.toast(`${type.toUpperCase()} issued to ${target}.`);
+        document.getElementById('ban-target').value = '';
+        document.getElementById('ban-reason').value = '';
+        this.loadBans();
+        this.loadLogs();
+    },
+
+    async loadBans() {
+        const res = await this.req('bans_list');
+        const container = document.getElementById('bans-table-container');
+
+        if (res.error) {
+            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
+            return;
+        }
+
+        if (!res.length) {
+            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No active punishments.</p>`;
+            return;
+        }
+
+        let html = `<table class="data-table">
+            <thead><tr><th>Player</th><th>Type</th><th>Reason</th><th>Issued By</th><th>Date</th><th></th></tr></thead><tbody>`;
+
+        res.forEach(b => {
+            const date = new Date(b.issued_at).toLocaleDateString('en-GB');
+            const typeClass = `ptype-${b.type}`;
+            const label = b.type === 'tempban' ? `TEMP BAN${b.duration ? ' · ' + b.duration : ''}` : b.type.toUpperCase();
+            html += `<tr>
+                <td class="bold">${b.target_name}</td>
+                <td><span class="${typeClass}">${label}</span></td>
+                <td style="color:var(--text-secondary);max-width:260px;">${b.reason}</td>
+                <td class="mono" style="color:var(--accent-bright);">${b.issued_by}</td>
+                <td class="mono" style="color:var(--text-dim);">${date}</td>
+                <td><button class="btn-sm" onclick="app.revokePunishment(${b.id})">REVOKE</button></td>
+            </tr>`;
+        });
+
+        html += `</tbody></table>`;
+        container.innerHTML = html;
+    },
+
+    async revokePunishment(id) {
+        const res = await this.req('revoke', 'POST', { id });
+        if (res.error) return this.toast(res.error, "error");
+        this.toast("Punishment revoked.");
+        this.loadBans();
+        this.loadLogs();
+    },
+
+    // ── SERVER CONSOLE ──
+    _cmdHistory: [],
+    _historyIndex: -1,
+
+    consoleLog(text, cls = '') {
+        const out = document.getElementById('console-output');
+        if (!out) return;
+        const line = document.createElement('div');
+        line.className = cls;
+        line.innerHTML = text;
+        out.appendChild(line);
+        out.scrollTop = out.scrollHeight;
+    },
+
+    initConsole() {
+        const output = document.getElementById('console-output');
+        output.innerHTML = '';
+        this.consoleLog(`<span class="con-prompt">brume@server</span><span class="con-dim">:~$</span> <span class="con-dim">// Console ready. Commands run via RCON.</span>`);
+
+        // Arrow key history navigation
+        const input = document.getElementById('console-input');
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (this._historyIndex < this._cmdHistory.length - 1) {
+                    this._historyIndex++;
+                    input.value = this._cmdHistory[this._cmdHistory.length - 1 - this._historyIndex];
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (this._historyIndex > 0) {
+                    this._historyIndex--;
+                    input.value = this._cmdHistory[this._cmdHistory.length - 1 - this._historyIndex];
+                } else {
+                    this._historyIndex = -1;
+                    input.value = '';
+                }
+            }
+        });
+    },
+
+    async runCommand() {
+        const input = document.getElementById('console-input');
+        const cmd = input.value.trim();
+        if (!cmd) return;
+
+        this._cmdHistory.push(cmd);
+        this._historyIndex = -1;
+        input.value = '';
+
+        this.consoleLog(`<span class="con-prompt">brume@server</span><span class="con-dim">:~$</span> <span class="con-line-cmd">${this.escapeHtml(cmd)}</span>`);
+
+        const res = await this.req('console', 'POST', { command: cmd });
+
+        if (res.error) {
+            this.consoleLog(`<span class="con-line-err">✗ ${this.escapeHtml(res.error)}</span>`);
+        } else {
+            const lines = (res.output || '').split('\n');
+            lines.forEach(line => {
+                const cls = line.startsWith('[ERROR]') ? 'con-line-err'
+                          : line.startsWith('[WARN]')  ? 'con-line-info'
+                          : 'con-line-ok';
+                this.consoleLog(`<span class="${cls}">${this.escapeHtml(line)}</span>`);
+            });
+        }
+    },
+
+    clearConsole() {
+        const out = document.getElementById('console-output');
+        out.innerHTML = '';
+        this.consoleLog(`<span class="con-dim">// Console cleared.</span>`);
+    },
+
+    escapeHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 };
 
-window.onload = () => app.init();
+window.onload = () => {
+    app.init();
+
+    const origNavigate = app.navigate.bind(app);
+    app.navigate = function(viewId) {
+        origNavigate(viewId);
+        if (viewId === 'players') app.startPlayerPolling();
+        if (viewId === 'bans') app.loadBans();
+        if (viewId === 'console') app.initConsole();
+    };
+};
