@@ -472,13 +472,13 @@ const app = {
                 borderWidth: 1,
                 titleColor: '#eeeef5',
                 bodyColor: '#8888aa',
-                padding: 10,
-                titleFont: { family: 'Space Mono', size: 11 },
-                bodyFont: { family: 'Space Mono', size: 11 },
+                padding: 12,
+                titleFont: { family: 'Space Mono', size: 12 },
+                bodyFont: { family: 'Space Mono', size: 12 },
             }},
             scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 } },
-                y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 6 } }
+                x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 8 } },
+                y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 6 } }
             }
         };
     },
@@ -563,9 +563,9 @@ const app = {
                 ...this.chartDefaults(),
                 interaction: { mode: 'index', intersect: false },
                 scales: {
-                    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 } },
-                    y:  { position: 'left',  grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, callback: v => this.fmtCoins(v) } },
-                    y2: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#00e5a0', font: { family: 'Space Mono', size: 10 } } }
+                    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 8 } },
+                    y:  { position: 'left',  grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, callback: v => this.fmtCoins(v) } },
+                    y2: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#00e5a0', font: { family: 'Space Mono', size: 12 } } }
                 }
             }
         });
@@ -624,7 +624,7 @@ const app = {
                 ...this.chartDefaults(),
                 plugins: {
                     ...this.chartDefaults().plugins,
-                    legend: { display: true, labels: { color: '#8888aa', font: { family: 'Space Mono', size: 10 }, boxWidth: 10 } }
+                    legend: { display: true, labels: { color: '#8888aa', font: { family: 'Space Mono', size: 12 }, boxWidth: 12 } }
                 },
                 scales: {
                     x: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 } } },
@@ -646,41 +646,41 @@ const app = {
             if (r.session_count > maxVal) maxVal = r.session_count;
         });
 
-        const cellSize = 16;
-        const labelW   = 28;
-        const labelH   = 20;
+        const cellSize = 24;
+        const labelW   = 36;
+        const labelH   = 24;
 
         let html = `<div style="overflow-x:auto;"><div style="display:inline-block;">`;
 
         // Hour labels top
-        html += `<div style="display:flex;margin-left:${labelW}px;margin-bottom:2px;">`;
+        html += `<div style="display:flex;margin-left:${labelW}px;margin-bottom:4px;">`;
         HOURS.forEach((h, i) => {
-            html += `<div style="width:${cellSize}px;font-family:'Space Mono',monospace;font-size:8px;color:var(--text-dim);text-align:center;overflow:hidden;">${i % 3 === 0 ? h : ''}</div>`;
+            html += `<div style="width:${cellSize}px;font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);text-align:center;overflow:hidden;">${i % 3 === 0 ? h : ''}</div>`;
         });
         html += `</div>`;
 
         // Rows
         DAYS.forEach((day, di) => {
-            html += `<div style="display:flex;align-items:center;margin-bottom:2px;">`;
-            html += `<div style="width:${labelW}px;font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);text-align:right;padding-right:6px;">${day}</div>`;
+            html += `<div style="display:flex;align-items:center;margin-bottom:3px;">`;
+            html += `<div style="width:${labelW}px;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);text-align:right;padding-right:8px;">${day}</div>`;
             HOURS.forEach((_, hi) => {
                 const val = grid[`${di}_${hi}`] || 0;
                 const intensity = maxVal > 0 ? val / maxVal : 0;
-                const alpha     = 0.08 + intensity * 0.92;
-                const color     = intensity > 0.6 ? `rgba(91,106,255,${alpha})` : intensity > 0.3 ? `rgba(91,106,255,${alpha})` : `rgba(91,106,255,${alpha})`;
-                const border    = intensity > 0.5 ? '1px solid rgba(91,106,255,0.4)' : '1px solid rgba(255,255,255,0.04)';
+                const alpha  = 0.08 + intensity * 0.92;
+                const color  = `rgba(91,106,255,${alpha})`;
+                const border = intensity > 0.5 ? '1px solid rgba(91,106,255,0.4)' : '1px solid rgba(255,255,255,0.04)';
                 html += `<div title="${day} ${hi}:00 — ${val} sessions" style="width:${cellSize}px;height:${cellSize}px;background:${color};border:${border};border-radius:2px;cursor:default;"></div>`;
             });
             html += `</div>`;
         });
 
         // Legend
-        html += `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;margin-left:${labelW}px;">`;
-        html += `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">Low</span>`;
+        html += `<div style="display:flex;align-items:center;gap:6px;margin-top:10px;margin-left:${labelW}px;">`;
+        html += `<span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">Low</span>`;
         [0.1,0.3,0.5,0.7,0.9].forEach(a => {
-            html += `<div style="width:14px;height:14px;background:rgba(91,106,255,${a});border-radius:2px;"></div>`;
+            html += `<div style="width:18px;height:18px;background:rgba(91,106,255,${a});border-radius:2px;"></div>`;
         });
-        html += `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">High</span>`;
+        html += `<span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">High</span>`;
         html += `</div>`;
 
         html += `</div></div>`;
