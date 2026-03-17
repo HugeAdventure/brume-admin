@@ -74,7 +74,7 @@
 
             <div class="nav-section">
                 <span class="nav-label">Development</span>
-                <button class="nav-link" data-roles="admin,dev" onclick="app.navigate('generator')">Item Architect</button>
+                <button class="nav-link" data-roles="admin,dev" onclick="window.open('/architect','_blank')">Item Architect ↗</button>
             </div>
 
             <div class="sidebar-footer">
@@ -488,9 +488,13 @@
                     <h1>Item Architect</h1>
                     <p>Design and generate custom item configurations</p>
                 </div>
-                <div class="card">
-                    <div class="card-title">Workspace</div>
-                    <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Item architecture workspace active — add your generator form here.</p>
+                <div class="card" style="display:flex;align-items:center;gap:24px;padding:32px;">
+                    <div style="font-size:48px;">⚔</div>
+                    <div>
+                        <h2 style="font-size:20px;font-weight:800;margin-bottom:8px;">Open Item Editor</h2>
+                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);margin-bottom:16px;">Visual item builder with live Minecraft tooltip preview and auto-generated Skript code.</p>
+                        <a href="/item-editor.html" target="_blank" class="btn-primary" style="text-decoration:none;display:inline-block;width:auto;padding:12px 24px;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;">OPEN ITEM ARCHITECT →</a>
+                    </div>
                 </div>
             </div>
 
