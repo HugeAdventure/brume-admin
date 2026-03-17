@@ -504,7 +504,7 @@ const app = {
     renderEcoChart(data) {
         this.destroyChart('eco');
         const snaps = data.snapshots || [];
-        const peak = data.peak || {};
+        const peak  = data.peak || {};
 
         // KPIs
         document.getElementById('a-peak-eco').innerText = this.fmtCoins(peak.peak_coins || 0) + ' ◎';
@@ -517,17 +517,52 @@ const app = {
             el.style.color = pct >= 0 ? 'var(--green)' : 'var(--red)';
         }
 
+        // ── Anomaly detection ──
+        // Flag any snapshot where coins changed by >20% vs previous
+        const anomalies = [];
+        for (let i = 1; i < snaps.length; i++) {
+            const prev = snaps[i - 1].total_coins;
+            const curr = snaps[i].total_coins;
+            if (prev > 0) {
+                const change = ((curr - prev) / prev) * 100;
+                if (Math.abs(change) >= 20) {
+                    anomalies.push({ index: i, change, snap: snaps[i] });
+                }
+            }
+        }
+
+        const badge = document.getElementById('eco-anomaly-badge');
+        badge.style.display = anomalies.length ? 'inline-block' : 'none';
+
+        const annoEl = document.getElementById('eco-annotations');
+        annoEl.innerHTML = anomalies.map(a => {
+            const d = new Date(a.snap.hour).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+            const col = a.change > 0 ? 'var(--amber)' : 'var(--red)';
+            const sign = a.change > 0 ? '+' : '';
+            return `<span style="font-family:'Space Mono',monospace;font-size:10px;background:var(--bg-raised);border:1px solid var(--border-mid);padding:4px 10px;border-radius:2px;color:${col};">
+                ⚠ ${d} — ${sign}${a.change.toFixed(1)}% (${this.fmtCoins(a.snap.total_coins)} ◎)
+            </span>`;
+        }).join('');
+
         const labels = snaps.map(s => {
             const d = new Date(s.hour);
             return this._analyticsDays <= 7
-                ? d.toLocaleDateString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+                ? d.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
                 : d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
         });
 
         const ctx = document.getElementById('eco-chart').getContext('2d');
-        const grad = ctx.createLinearGradient(0, 0, 0, 220);
-        grad.addColorStop(0, 'rgba(91,106,255,0.25)');
+        const grad = ctx.createLinearGradient(0, 0, 0, 340);
+        grad.addColorStop(0, 'rgba(91,106,255,0.3)');
         grad.addColorStop(1, 'rgba(91,106,255,0)');
+
+        // Anomaly point colors
+        const pointColors = snaps.map((_, i) =>
+            anomalies.find(a => a.index === i) ? '#ff4757' : '#5b6aff'
+        );
+        const pointSizes = snaps.map((_, i) =>
+            anomalies.find(a => a.index === i) ? 7 : (snaps.length > 60 ? 0 : 4)
+        );
 
         this._charts['eco'] = new Chart(ctx, {
             type: 'line',
@@ -536,12 +571,12 @@ const app = {
                 datasets: [
                     {
                         label: 'Total Coins',
-                        data: snaps.map(s => s.total_coins),
+                        data: snaps.map(s => Math.max(0, s.total_coins)), // clamp negatives
                         borderColor: '#5b6aff',
                         backgroundColor: grad,
-                        borderWidth: 2,
-                        pointRadius: snaps.length > 60 ? 0 : 3,
-                        pointBackgroundColor: '#5b6aff',
+                        borderWidth: 2.5,
+                        pointRadius: pointSizes,
+                        pointBackgroundColor: pointColors,
                         fill: true,
                         tension: 0.3,
                         yAxisID: 'y',
@@ -553,19 +588,50 @@ const app = {
                         backgroundColor: 'transparent',
                         borderWidth: 1.5,
                         pointRadius: 0,
-                        borderDash: [4, 4],
+                        borderDash: [5, 5],
                         tension: 0.3,
                         yAxisID: 'y2',
                     }
                 ]
             },
             options: {
-                ...this.chartDefaults(),
+                responsive: true,
+                maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#16161f',
+                        borderColor: 'rgba(255,255,255,0.12)',
+                        borderWidth: 1,
+                        titleColor: '#eeeef5',
+                        bodyColor: '#8888aa',
+                        padding: 14,
+                        titleFont: { family: 'Space Mono', size: 12 },
+                        bodyFont: { family: 'Space Mono', size: 12 },
+                        callbacks: {
+                            label: ctx => {
+                                if (ctx.datasetIndex === 0) return ` Coins: ${Number(ctx.raw).toLocaleString()} ◎`;
+                                return ` Players: ${ctx.raw}`;
+                            }
+                        }
+                    }
+                },
                 scales: {
-                    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 8 } },
-                    y:  { position: 'left',  grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, callback: v => this.fmtCoins(v) } },
-                    y2: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#00e5a0', font: { family: 'Space Mono', size: 12 } } }
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 10 }
+                    },
+                    y: {
+                        position: 'left',
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, callback: v => this.fmtCoins(v) + ' ◎' }
+                    },
+                    y2: {
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#00e5a0', font: { family: 'Space Mono', size: 12 } }
+                    }
                 }
             }
         });
