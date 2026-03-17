@@ -732,3 +732,10 @@ select:focus { border-color: var(--accent); }
 .player-row-name { font-weight:600; font-size:14px; flex:1; }
 .player-row-meta { font-family:'Space Mono',monospace; font-size:11px; color:var(--text-secondary); }
 .player-row-actions { display:flex; gap:8px; }
+
+/* ── RANGE BUTTON ACTIVE STATE ── */
+.range-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
