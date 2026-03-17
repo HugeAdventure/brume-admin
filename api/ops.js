@@ -1,6 +1,11 @@
 import mysql from 'mysql2/promise';
 import crypto from 'crypto';
-import Rcon from 'rcon'; // npm install rcon
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+// Lazy RCON — won't crash the whole module if package is missing
+let Rcon;
+try { Rcon = require('rcon'); } catch { Rcon = null; }
 
 // ── Connection pool (reused across requests on Vercel) ──
 let pool;
@@ -18,6 +23,7 @@ function getPool() {
 
 // ── RCON helper ──
 function rconExec(command) {
+    if (!Rcon) throw new Error('RCON package not installed. Run: npm install rcon');
     return new Promise((resolve, reject) => {
         const conn = new Rcon(
             process.env.RCON_HOST || 'localhost',
