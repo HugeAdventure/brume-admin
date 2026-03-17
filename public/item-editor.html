@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Item Architect — Brume</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<!-- Minecraft font -->
+<style>
+@font-face {
+  font-family: 'Minecraft';
+  src: url('https://cdn.jsdelivr.net/gh/South-Paw/typeface-minecraft@master/fonts/minecraft/minecraft.woff') format('woff');
+  font-weight: normal;
+}
+</style>
+<style>
+:root {
+  --bg: #07070a;
+  --surface: #0f0f16;
+  --raised: #16161f;
+  --hover: #1e1e2a;
+  --border: rgba(255,255,255,0.07);
+  --border-mid: rgba(255,255,255,0.13);
+  --text: #eeeef5;
+  --dim: #6666aa;
+  --dimmer: #33334a;
+  --accent: #5b6aff;
+  --accent-glow: rgba(91,106,255,0.15);
+
+  /* Minecraft tier colors */
+  --mc-common:    #ffffff;
+  --mc-uncommon:  #55ff55;
+  --mc-rare:      #5555ff;
+  --mc-epic:      #aa00aa;
+  --mc-legendary: #ffaa00;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── TOP BAR ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.topbar-logo { display: flex; align-items: center; gap: 10px; }
+.topbar-hex { width: 24px; height: 24px; background: var(--accent); clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%); }
+.topbar-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; }
+.topbar-sub { font-size: 10px; color: var(--dim); letter-spacing: 1.5px; text-transform: uppercase; }
+.topbar-actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* ── LAYOUT ── */
+.workspace {
+  display: grid;
+  grid-template-columns: 340px 1fr 340px;
+  flex: 1;
+  overflow: hidden;
+  height: calc(100vh - 53px);
+}
+
+/* ── PANELS ── */
+.panel {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+.panel-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.panel-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+.panel-body { padding: 16px 20px; flex: 1; }
+
+/* ── FORM ELEMENTS ── */
+.field { margin-bottom: 14px; }
+.field label {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+input[type=text], input[type=number], textarea, select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-mid);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 2px;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s;
+  resize: vertical;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--dimmer); }
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2333334a'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+select option { background: #0f0f16; }
+
+.field-row { display: grid; gap: 10px; }
+.field-row.col2 { grid-template-columns: 1fr 1fr; }
+.field-row.col3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.section-divider {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dimmer);
+  padding: 12px 0 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ── BUTTONS ── */
+.btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 2px;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn.secondary {
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--border-mid);
+}
+.btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn.danger { background: #ef4444; }
+.btn.sm { padding: 6px 12px; font-size: 9px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── SAVED ITEMS LIST ── */
+.saved-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  background: var(--raised);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.saved-item:hover { border-color: var(--accent); }
+.saved-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.saved-item-name { font-size: 12px; font-weight: 700; flex: 1; }
+.saved-item-id { font-size: 9px; color: var(--dim); letter-spacing: 1px; margin-top: 1px; }
+
+/* ── PREVIEW AREA ── */
+.preview-area {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 40px 20px;
+}
+
+.preview-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(91,106,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91,106,255,0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ── MINECRAFT TOOLTIP ── */
+.mc-tooltip-wrap {
+  position: relative;
+  z-index: 1;
+  transform-origin: center;
+}
+
+.mc-tooltip {
+  background: #100010;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  padding: 8px 10px;
+  min-width: 220px;
+  max-width: 320px;
+  position: relative;
+  font-family: 'Minecraft', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.45;
+  image-rendering: pixelated;
+  box-shadow:
+    inset 0 0 0 1px #1e0030,
+    0 0 0 1px #100010,
+    4px 4px 0 rgba(0,0,0,0.5);
+}
+
+/* Purple gradient border effect */
+.mc-tooltip::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    #5000be 0%,
+    #280064 100%
+  );
+  z-index: -1;
+}
+
+.mc-tooltip::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 2px;
+  background: #100010;
+  z-index: -0.5;
+  outline: 1px solid #1e0030;
+}
+
+.mc-line { display: block; white-space: pre-wrap; word-break: break-word; }
+.mc-line.empty { height: 4px; }
+
+/* Minecraft & codes → CSS */
+.mc-0 { color: #000000; }
+.mc-1 { color: #0000aa; }
+.mc-2 { color: #00aa00; }
+.mc-3 { color: #00aaaa; }
+.mc-4 { color: #aa0000; }
+.mc-5 { color: #aa00aa; }
+.mc-6 { color: #ffaa00; }
+.mc-7 { color: #aaaaaa; }
+.mc-8 { color: #555555; }
+.mc-9 { color: #5555ff; }
+.mc-a { color: #55ff55; }
+.mc-b { color: #55ffff; }
+.mc-c { color: #ff5555; }
+.mc-d { color: #ff55ff; }
+.mc-e { color: #ffff55; }
+.mc-f { color: #ffffff; }
+
+/* ── CODE OUTPUT ── */
+.code-output {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 14px;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+  flex: 1;
+  color: #aaaacc;
+  font-family: 'Space Mono', monospace;
+}
+
+.code-keyword  { color: #5b6aff; }
+.code-string   { color: #ffb830; }
+.code-value    { color: #55ff99; }
+.code-comment  { color: #444466; }
+.code-id       { color: #ff80b0; }
+
+/* ── ENCHANT SLOT ── */
+.enchant-slot {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.enchant-slot-header {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+/* ── TIER BADGE ── */
+.tier-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+
+/* ── TABS ── */
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tab {
+  padding: 10px 16px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+
+/* ── TOAST ── */
+.toast-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--raised);
+  border: 1px solid var(--border-mid);
+  border-left: 3px solid #55ff55;
+  padding: 12px 16px;
+  border-radius: 2px;
+  font-size: 11px;
+  animation: toast-in 0.2s ease-out;
+  transition: opacity 0.3s;
+}
+.toast.err { border-left-color: #ff5555; }
+@keyframes toast-in { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ── COLOR HINT ── */
+.color-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.color-chip {
+  font-family: 'Minecraft', monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #100010;
+  border: 1px solid #333;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.1s;
+  user-select: none;
+}
+.color-chip:hover { transform: scale(1.1); }
+</style>
+</head>
+<body>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-logo">
+    <div class="topbar-hex"></div>
+    <div>
+      <div class="topbar-title">Item Architect</div>
+      <div class="topbar-sub">Brume Engine v2</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-left:24px;">
+    <button class="btn secondary sm" onclick="editor.newItem()">+ New Item</button>
+    <button class="btn secondary sm" onclick="editor.loadSaved()">⊞ Saved Items</button>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn secondary sm" onclick="editor.saveItem()">💾 Save</button>
+    <button class="btn sm" onclick="editor.copyCode()">⧉ Copy Code</button>
+    <a href="/" class="btn secondary sm" style="text-decoration:none;">← Panel</a>
+  </div>
+</div>
+
+<div class="workspace">
+
+  <!-- LEFT: FORM -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Item Properties</div>
+    </div>
+    <div class="tabs" id="form-tabs">
+      <button class="tab active" onclick="editor.setTab('base',this)">Base</button>
+      <button class="tab" onclick="editor.setTab('stats',this)">Stats</button>
+      <button class="tab" onclick="editor.setTab('lore',this)">Lore</button>
+      <button class="tab" onclick="editor.setTab('enchants',this)">Enchants</button>
+    </div>
+
+    <!-- BASE TAB -->
+    <div class="panel-body" id="tab-base">
+      <div class="field">
+        <label>Item ID</label>
+        <input type="text" id="f-id" placeholder="e.g. BREEZE_HELMET" oninput="editor.update()" style="text-transform:uppercase;">
+      </div>
+      <div class="field-row col2">
+        <div class="field">
+          <label>Category</label>
+          <select id="f-category" onchange="editor.updateCategory()">
+            <option value="armor">Armor</option>
+            <option value="weapon">Weapon / Wand</option>
+            <option value="hoe">Hoe / Tool</option>
+            <option value="accessory">Accessory</option>
+            <option value="material">Raw Material</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Item Type Tag</label>
+          <input type="text" id="f-item-type" placeholder="HELMET" oninput="editor.update()">
+        </div>
+      </div>
+      <div class="field-row col2">
+        <div class="field">
+          <label>Tier</label>
+          <select id="f-tier" onchange="editor.update()">
+            <option value="COMMON">COMMON</option>
+            <option value="UNCOMMON">UNCOMMON</option>
+            <option value="RARE">RARE</option>
+            <option value="EPIC">EPIC</option>
+            <option value="LEGENDARY">LEGENDARY</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Version</label>
+          <input type="number" id="f-version" value="1" min="1" oninput="editor.update()">
+        </div>
+      </div>
+      <div class="field">
+        <label>Material (Skript)</label>
+        <input type="text" id="f-material" placeholder="e.g. leather helmet" oninput="editor.update()">
+      </div>
+      <div class="field-row col2">
+        <div class="field">
+          <label>Primary Color</label>
+          <input type="text" id="f-primary" placeholder="&9 or <#5b6aff>" oninput="editor.update()">
+        </div>
+        <div class="field">
+          <label>Secondary Color</label>
+          <input type="text" id="f-secondary" placeholder="&7" oninput="editor.update()">
+        </div>
+      </div>
+      <!-- Color reference -->
+      <div class="section-divider">Color Reference</div>
+      <div class="color-row" id="color-chips"></div>
+
+      <div class="section-divider">Flags</div>
+      <div class="field-row col3">
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);cursor:pointer;">
+          <input type="checkbox" id="f-has-enchants" onchange="editor.update()"> Enchantable
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);cursor:pointer;">
+          <input type="checkbox" id="f-has-glint" onchange="editor.update()"> Glint
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);cursor:pointer;">
+          <input type="checkbox" id="f-reforgeable" onchange="editor.update()"> Reforgeable
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);cursor:pointer;">
+          <input type="checkbox" id="f-upgradeable" onchange="editor.update()"> Upgradeable
+        </label>
+      </div>
+    </div>
+
+    <!-- STATS TAB -->
+    <div class="panel-body" id="tab-stats" style="display:none;">
+      <div class="section-divider">Combat Stats</div>
+      <div class="field-row col2">
+        <div class="field"><label>Health</label><input type="number" id="f-health" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Defense</label><input type="number" id="f-defense" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Speed</label><input type="number" id="f-speed" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Strength</label><input type="number" id="f-strength" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Damage</label><input type="number" id="f-damage" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Cooldown</label><input type="text" id="f-cooldown" placeholder="e.g. 5s" oninput="editor.update()"></div>
+      </div>
+
+      <div class="section-divider">Farming Stats</div>
+      <div class="field-row col2">
+        <div class="field"><label>Farming Fortune</label><input type="number" id="f-farming-fortune" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Enchanted Chance</label><input type="number" id="f-enchanted-chance" placeholder="0" oninput="editor.update()"></div>
+      </div>
+
+      <div class="section-divider">Mining Stats</div>
+      <div class="field-row col2">
+        <div class="field"><label>Mining Speed</label><input type="number" id="f-mining-speed" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Mining Fortune</label><input type="number" id="f-mining-fortune" placeholder="0" oninput="editor.update()"></div>
+      </div>
+
+      <div class="section-divider">Fishing Stats</div>
+      <div class="field-row col2">
+        <div class="field"><label>Fishing Power</label><input type="number" id="f-fishing-power" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Fishing Speed</label><input type="number" id="f-fishing-speed" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Fishing Control</label><input type="number" id="f-fishing-control" placeholder="0" oninput="editor.update()"></div>
+        <div class="field"><label>Fishing Luck</label><input type="number" id="f-fishing-luck" placeholder="0" oninput="editor.update()"></div>
+      </div>
+    </div>
+
+    <!-- LORE TAB -->
+    <div class="panel-body" id="tab-lore" style="display:none;">
+      <div class="field">
+        <label>Set Name</label>
+        <input type="text" id="f-set-name" placeholder="e.g. Gale Force" oninput="editor.update()">
+      </div>
+      <div class="field">
+        <label>Set Desc <span style="color:var(--dimmer);">( | for new line )</span></label>
+        <textarea id="f-set-desc" rows="3" placeholder="&c5%% Chance to launch skyward on attack,|&7Dealing &c40%% increased melee damage" oninput="editor.update()"></textarea>
+      </div>
+      <div class="field">
+        <label>Ability Name</label>
+        <input type="text" id="f-ab-name" placeholder="e.g. Cyclone" oninput="editor.update()">
+      </div>
+      <div class="field">
+        <label>Ability Desc <span style="color:var(--dimmer);">( | for new line )</span></label>
+        <textarea id="f-ab-desc" rows="2" placeholder="Right-click to pull nearby foes|&7into a localized blizzard." oninput="editor.update()"></textarea>
+      </div>
+      <div class="field">
+        <label>Ability Color</label>
+        <input type="text" id="f-ab-color" placeholder="&6" oninput="editor.update()">
+      </div>
+      <div class="field">
+        <label>Flavor Text <span style="color:var(--dimmer);">( | for new line )</span></label>
+        <textarea id="f-flavor" rows="2" placeholder="The wind itself becomes your armor." oninput="editor.update()"></textarea>
+      </div>
+      <div class="field">
+        <label>Custom Lore <span style="color:var(--dimmer);">( | for new line )</span></label>
+        <textarea id="f-custom-lore" rows="2" placeholder="Additional custom lines..." oninput="editor.update()"></textarea>
+      </div>
+    </div>
+
+    <!-- ENCHANTS TAB -->
+    <div class="panel-body" id="tab-enchants" style="display:none;">
+      <p style="font-size:10px;color:var(--dim);margin-bottom:16px;line-height:1.6;">// Enchant slots as stored in NBT. Uses your engine's enchant IDs.</p>
+
+      <div class="enchant-slot">
+        <div class="enchant-slot-header">Enchant Slot 1</div>
+        <div class="field-row col2">
+          <div class="field" style="margin:0;">
+            <label>Enchant ID</label>
+            <select id="f-ench1-id" onchange="editor.update()">
+              <option value="">— Empty —</option>
+              <option value="SHARPNESS">SHARPNESS</option>
+              <option value="HEALING_EDGE">HEALING_EDGE</option>
+              <option value="EXECUTION">EXECUTION</option>
+              <option value="PROTECTION">PROTECTION</option>
+              <option value="VITALITY">VITALITY</option>
+              <option value="DEFENSE">DEFENSE</option>
+              <option value="PROSPERITY">PROSPERITY</option>
+              <option value="HASTE">HASTE</option>
+              <option value="FORTUNE">FORTUNE</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0;">
+            <label>Level</label>
+            <select id="f-ench1-lvl" onchange="editor.update()">
+              <option value="1">I</option>
+              <option value="2">II</option>
+              <option value="3">III</option>
+              <option value="4">IV</option>
+              <option value="5">V</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="enchant-slot">
+        <div class="enchant-slot-header">Enchant Slot 2</div>
+        <div class="field-row col2">
+          <div class="field" style="margin:0;">
+            <label>Enchant ID</label>
+            <select id="f-ench2-id" onchange="editor.update()">
+              <option value="">— Empty —</option>
+              <option value="SHARPNESS">SHARPNESS</option>
+              <option value="HEALING_EDGE">HEALING_EDGE</option>
+              <option value="EXECUTION">EXECUTION</option>
+              <option value="PROTECTION">PROTECTION</option>
+              <option value="VITALITY">VITALITY</option>
+              <option value="DEFENSE">DEFENSE</option>
+              <option value="PROSPERITY">PROSPERITY</option>
+              <option value="HASTE">HASTE</option>
+              <option value="FORTUNE">FORTUNE</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0;">
+            <label>Level</label>
+            <select id="f-ench2-lvl" onchange="editor.update()">
+              <option value="1">I</option>
+              <option value="2">II</option>
+              <option value="3">III</option>
+              <option value="4">IV</option>
+              <option value="5">V</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER: PREVIEW -->
+  <div class="preview-area" id="preview-area">
+    <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:32px;">
+      <!-- Item name above tooltip -->
+      <div id="preview-item-name" style="font-family:'Minecraft',monospace;font-size:18px;color:#ffffff;text-shadow:2px 2px 0 #000;"></div>
+
+      <!-- Tooltip -->
+      <div class="mc-tooltip-wrap">
+        <div class="mc-tooltip" id="mc-tooltip">
+          <span class="mc-line mc-f">New Item</span>
+        </div>
+      </div>
+
+      <!-- Preview controls -->
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+        <span style="font-size:9px;color:var(--dimmer);letter-spacing:1px;">SCALE</span>
+        <input type="range" min="0.6" max="2" step="0.1" value="1" oninput="editor.setScale(this.value)" style="width:100px;">
+        <span id="scale-label" style="font-size:9px;color:var(--dim);min-width:28px;">1×</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CODE + SAVED -->
+  <div class="panel" style="border-left:1px solid var(--border);">
+    <div class="panel-header">
+      <div class="panel-title">Generated Code</div>
+      <button class="btn sm" style="margin-left:auto;" onclick="editor.copyCode()">⧉ Copy</button>
+    </div>
+    <div class="tabs" id="right-tabs">
+      <button class="tab active" onclick="editor.setRightTab('code',this)">Code</button>
+      <button class="tab" onclick="editor.setRightTab('saved',this)">Saved Items</button>
+    </div>
+
+    <div id="right-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:12px;">
+      <pre class="code-output" id="code-output"></pre>
+    </div>
+
+    <div id="right-saved" style="display:none;flex:1;overflow-y:auto;padding:12px;">
+      <div id="saved-list">
+        <p style="font-size:10px;color:var(--dimmer);text-align:center;padding:24px;">No saved items yet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MC_COLORS = {
+  '0':'#000000','1':'#0000aa','2':'#00aa00','3':'#00aaaa',
+  '4':'#aa0000','5':'#aa00aa','6':'#ffaa00','7':'#aaaaaa',
+  '8':'#555555','9':'#5555ff','a':'#55ff55','b':'#55ffff',
+  'c':'#ff5555','d':'#ff55ff','e':'#ffff55','f':'#ffffff'
+};
+
+const TIER_COLORS = {
+  COMMON:'#ffffff', UNCOMMON:'#55ff55', RARE:'#5555ff',
+  EPIC:'#aa00aa', LEGENDARY:'#ffaa00'
+};
+
+const ENCHANT_NAMES = {
+  SHARPNESS:'Sharpness', HEALING_EDGE:'Healing Edge', EXECUTION:'Execution',
+  PROTECTION:'Protection', VITALITY:'Vitality', DEFENSE:'Defense',
+  PROSPERITY:'Prosperity', HASTE:'Haste', FORTUNE:'Fortune'
+};
+
+const ROMAN = ['','I','II','III','IV','V'];
+
+function parseMcColor(str) {
+  if (!str) return '#aaaaaa';
+  const hex = str.match(/^<#([0-9a-fA-F]{6})>/);
+  if (hex) return '#' + hex[1];
+  const amp = str.match(/^&([0-9a-f])/i);
+  if (amp) return MC_COLORS[amp[1].toLowerCase()] || '#aaaaaa';
+  return '#aaaaaa';
+}
+
+// Parse a full Minecraft color string into HTML spans
+function mcToHtml(text) {
+  if (!text) return '';
+  let html = '';
+  let i = 0;
+  let curColor = '#ffffff';
+  let bold = false, italic = false, underline = false, strikethrough = false, obf = false;
+
+  const openSpan = (ch) => {
+    let style = `color:${curColor};`;
+    if (bold) style += 'font-weight:bold;';
+    if (italic) style += 'font-style:italic;';
+    if (underline) style += 'text-decoration:underline;';
+    if (strikethrough) style += 'text-decoration:line-through;';
+    return `<span style="${style}">${ch === ' ' ? '&nbsp;' : escHtml(ch)}</span>`;
+  };
+
+  while (i < text.length) {
+    // Hex color <#RRGGBB>
+    const hexMatch = text.slice(i).match(/^<#([0-9a-fA-F]{6})>/);
+    if (hexMatch) {
+      curColor = '#' + hexMatch[1];
+      bold = false; italic = false; underline = false; strikethrough = false;
+      i += hexMatch[0].length;
+      continue;
+    }
+    // & codes
+    if (text[i] === '&' && i + 1 < text.length) {
+      const code = text[i+1].toLowerCase();
+      if (MC_COLORS[code]) {
+        curColor = MC_COLORS[code];
+        bold = false; italic = false; underline = false; strikethrough = false;
+        i += 2; continue;
+      }
+      if (code === 'l') { bold = true; i += 2; continue; }
+      if (code === 'o') { italic = true; i += 2; continue; }
+      if (code === 'n') { underline = true; i += 2; continue; }
+      if (code === 'm') { strikethrough = true; i += 2; continue; }
+      if (code === 'r') { curColor = '#ffffff'; bold = false; italic = false; underline = false; strikethrough = false; i += 2; continue; }
+    }
+    html += openSpan(text[i]);
+    i++;
+  }
+  return html;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function getEnchantColor(lvl) {
+  if (lvl >= 5) return '#FFD700';
+  if (lvl >= 4) return '#E0115F';
+  if (lvl >= 3) return '#9D4EDD';
+  return '#5555ff';
+}
+
+// ── COLOR CHIPS ──
+const CHIPS = [
+  ['&f','#ffffff'],['&7','#aaaaaa'],['&8','#555555'],['&0','#000000'],
+  ['&a','#55ff55'],['&2','#00aa00'],['&b','#55ffff'],['&3','#00aaaa'],
+  ['&9','#5555ff'],['&1','#0000aa'],['&d','#ff55ff'],['&5','#aa00aa'],
+  ['&c','#ff5555'],['&4','#aa0000'],['&e','#ffff55'],['&6','#ffaa00'],
+];
+
+(function buildChips() {
+  const row = document.getElementById('color-chips');
+  CHIPS.forEach(([code, hex]) => {
+    const el = document.createElement('div');
+    el.className = 'color-chip';
+    el.style.color = hex;
+    el.textContent = code;
+    el.title = `Click to copy ${code}`;
+    el.onclick = () => {
+      navigator.clipboard.writeText(code);
+      toast(`Copied ${code}`);
+    };
+    row.appendChild(el);
+  });
+})();
+
+// ── MAIN EDITOR ──
+const editor = {
+  scale: 1,
+  currentTab: 'base',
+  rightTab: 'code',
+  savedItems: JSON.parse(localStorage.getItem('brume_items') || '[]'),
+
+  g(id) { return document.getElementById(id); },
+  val(id) { return this.g(id)?.value?.trim() || ''; },
+  num(id) { const v = parseInt(this.g(id)?.value); return isNaN(v) ? null : v; },
+  chk(id) { return this.g(id)?.checked || false; },
+
+  setTab(tab, btn) {
+    this.currentTab = tab;
+    ['base','stats','lore','enchants'].forEach(t => {
+      this.g('tab-' + t).style.display = t === tab ? '' : 'none';
+    });
+    document.querySelectorAll('#form-tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
+  },
+
+  setRightTab(tab, btn) {
+    this.rightTab = tab;
+    this.g('right-code').style.display = tab === 'code' ? 'flex' : 'none';
+    this.g('right-saved').style.display = tab === 'saved' ? 'flex' : 'none';
+    document.querySelectorAll('#right-tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
+    if (tab === 'saved') this.renderSaved();
+  },
+
+  setScale(v) {
+    this.scale = parseFloat(v);
+    this.g('scale-label').innerText = parseFloat(v).toFixed(1) + '×';
+    this.g('mc-tooltip').parentElement.style.transform = `scale(${v})`;
+  },
+
+  updateCategory() {
+    const cat = this.val('f-category');
+    const typeMap = { armor:'HELMET', weapon:'WEAPON', hoe:'HOE', accessory:'ACCESSORY', material:'none' };
+    if (!this.val('f-item-type')) this.g('f-item-type').value = typeMap[cat] || '';
+    this.update();
+  },
+
+  getData() {
+    return {
+      id:            this.val('f-id').toUpperCase(),
+      category:      this.val('f-category'),
+      tier:          this.val('f-tier'),
+      item_type:     this.val('f-item-type'),
+      version:       this.num('f-version') || 1,
+      material:      this.val('f-material'),
+      primary:       this.val('f-primary'),
+      secondary:     this.val('f-secondary'),
+      has_enchants:  this.chk('f-has-enchants'),
+      has_glint:     this.chk('f-has-glint'),
+      reforgeable:   this.chk('f-reforgeable'),
+      upgradeable:   this.chk('f-upgradeable'),
+      health:        this.num('f-health'),
+      defense:       this.num('f-defense'),
+      speed:         this.num('f-speed'),
+      strength:      this.num('f-strength'),
+      damage:        this.num('f-damage'),
+      cooldown:      this.val('f-cooldown'),
+      farming_fortune:  this.num('f-farming-fortune'),
+      enchanted_chance: this.num('f-enchanted-chance'),
+      mining_speed:  this.num('f-mining-speed'),
+      mining_fortune:this.num('f-mining-fortune'),
+      fishing_power: this.num('f-fishing-power'),
+      fishing_speed: this.num('f-fishing-speed'),
+      fishing_control: this.num('f-fishing-control'),
+      fishing_luck:  this.num('f-fishing-luck'),
+      set_name:      this.val('f-set-name'),
+      set_desc:      this.val('f-set-desc'),
+      ab_name:       this.val('f-ab-name'),
+      ab_desc:       this.val('f-ab-desc'),
+      ab_color:      this.val('f-ab-color'),
+      flavor:        this.val('f-flavor'),
+      custom_lore:   this.val('f-custom-lore'),
+      ench1_id:      this.val('f-ench1-id'),
+      ench1_lvl:     parseInt(this.val('f-ench1-lvl')) || 1,
+      ench2_id:      this.val('f-ench2-id'),
+      ench2_lvl:     parseInt(this.val('f-ench2-lvl')) || 1,
+    };
+  },
+
+  update() {
+    const d = this.getData();
+    this.renderTooltip(d);
+    this.renderCode(d);
+  },
+
+  // ── TOOLTIP RENDERER ──
+  renderTooltip(d) {
+    const tier = d.tier || 'COMMON';
+    const tierColor = TIER_COLORS[tier] || '#ffffff';
+    const primary = parseMcColor(d.primary) || tierColor;
+    const secondary = parseMcColor(d.secondary) || '#aaaaaa';
+
+    const lines = [];
+
+    // Item name line
+    const nameColor = d.primary || '&f';
+    const nameText = d.id ? `${nameColor}&l${d.id.replace(/_/g,' ')}` : `&fNew Item`;
+    lines.push({ html: mcToHtml(nameText), empty: false });
+
+    // Stats
+    const stats = [];
+    if (d.mining_speed)   stats.push(`&7Mining Speed: &f+${d.mining_speed} ⛏`);
+    if (d.mining_fortune) stats.push(`&7Mining Fortune: &f+${d.mining_fortune} ⛏`);
+    if (d.farming_fortune)  stats.push(`&7Farming Fortune: <#FFAA00>+${d.farming_fortune} ☘`);
+    if (d.enchanted_chance) stats.push(`&7Enchanted Crop Chance: <#55FF55>+${d.enchanted_chance} ✨`);
+    if (d.fishing_power)  stats.push(`&7Fishing Power: <#3AB0FF>+${d.fishing_power} 🎣`);
+    if (d.fishing_speed)  stats.push(`&7Fishing Speed: <#55FFFF>+${d.fishing_speed} ⚡`);
+    if (d.fishing_control)stats.push(`&7Fishing Control: <#55FF55>+${d.fishing_control} ⚓`);
+    if (d.cooldown)       stats.push(`&8Cooldown: &a${d.cooldown}`);
+    if (d.damage)         stats.push(`&7Damage: &c+${d.damage}`);
+    if (d.health)         stats.push(`&7Health: &c+${d.health} ❤`);
+    if (d.defense)        stats.push(`&7Defense: &a+${d.defense}`);
+    if (d.speed != null && d.speed !== 0) {
+      const spd = d.speed >= 0 ? `+${d.speed}` : `${d.speed}`;
+      stats.push(`&8Speed: ${d.primary || '&f'}${spd} &l⚡`);
+    }
+
+    if (stats.length) {
+      stats.forEach(s => lines.push({ html: mcToHtml(s), empty: false }));
+    }
+
+    // Set bonus
+    if (d.set_name) {
+      lines.push({ html: '', empty: true });
+      lines.push({ html: mcToHtml(`${d.primary || '&f'}Full Set Bonus: ${d.secondary || '&7'}&l${d.set_name} &7✧`), empty: false });
+      if (d.set_desc) {
+        d.set_desc.split('|').forEach(l => lines.push({ html: mcToHtml('&7' + l), empty: false }));
+      }
+    } else if (d.ab_name) {
+      lines.push({ html: '', empty: true });
+      const abCol = d.ab_color || '&6';
+      lines.push({ html: mcToHtml(`${abCol}Ability: ${d.primary || '&f'}&l${d.ab_name} &7✧`), empty: false });
+      if (d.ab_desc) {
+        d.ab_desc.split('|').forEach(l => lines.push({ html: mcToHtml('&7' + l), empty: false }));
+      }
+    }
+
+    // Custom lore
+    if (d.custom_lore) {
+      lines.push({ html: '', empty: true });
+      d.custom_lore.split('|').forEach(l => lines.push({ html: mcToHtml(l), empty: false }));
+    }
+
+    // Enchants
+    if (d.has_enchants) {
+      lines.push({ html: '', empty: true });
+      lines.push({ html: mcToHtml('&7Enchantments:'), empty: false });
+      [{ id: d.ench1_id, lvl: d.ench1_lvl }, { id: d.ench2_id, lvl: d.ench2_lvl }].forEach(e => {
+        if (e.id) {
+          const col = getEnchantColor(e.lvl);
+          const name = ENCHANT_NAMES[e.id] || e.id;
+          const roman = ROMAN[e.lvl] || 'I';
+          lines.push({ html: `<span style="color:${col};font-weight:${e.lvl>=5?'bold':'normal'}">${escHtml(name)} ${roman}</span>`, empty: false });
+        } else {
+          lines.push({ html: `<span style="color:#555555;">[ </span><span style="color:#aaaaaa;">Empty Enchantment Slot</span><span style="color:#555555;"> ]</span>`, empty: false });
+        }
+      });
+    }
+
+    // Reforgeable / upgradeable
+    if (d.reforgeable) {
+      lines.push({ html: '', empty: true });
+      lines.push({ html: mcToHtml('&7❂ Reforgeable'), empty: false });
+    }
+    if (d.upgradeable) {
+      if (!d.reforgeable) lines.push({ html: '', empty: true });
+      lines.push({ html: mcToHtml('&7✦ Upgradeable'), empty: false });
+    }
+
+    // Flavor
+    if (d.flavor) {
+      lines.push({ html: '', empty: true });
+      d.flavor.split('|').forEach(l => lines.push({ html: mcToHtml('&8&o' + l), empty: false }));
+      lines.push({ html: '', empty: true });
+    }
+
+    // Tier line
+    if (d.item_type && d.item_type !== 'none') {
+      lines.push({ html: `<span style="color:${primary};font-weight:bold;">${escHtml(tier)}</span>&nbsp;<span style="color:${secondary};">✦</span>&nbsp;<span style="color:${primary};font-weight:bold;">${escHtml(d.item_type)}</span>`, empty: false });
+    } else {
+      lines.push({ html: `<span style="color:${primary};font-weight:bold;">${escHtml(tier)}</span>`, empty: false });
+    }
+
+    // Render
+    const tooltip = this.g('mc-tooltip');
+    tooltip.innerHTML = lines.map(l =>
+      l.empty
+        ? `<span class="mc-line empty"></span>`
+        : `<span class="mc-line">${l.html}</span>`
+    ).join('');
+
+    // Item name above
+    this.g('preview-item-name').innerHTML = mcToHtml(nameText);
+  },
+
+  // ── CODE GENERATOR ──
+  renderCode(d) {
+    if (!d.id) {
+      this.g('code-output').innerHTML = '<span style="color:var(--dimmer);">// Enter an Item ID to generate code...</span>';
+      return;
+    }
+
+    const id = d.id;
+    const lines = [];
+    const L = (s) => lines.push(s);
+    const stat = (key, val, type = 'string') => {
+      if (val === null || val === undefined || val === '') return;
+      const q = type === 'string' ? `"${val}"` : `${val}`;
+      L(`    if {_stat} is "${key}":`);
+      L(`        return ${q}`);
+    };
+
+    L(`    if {_id} is "${id}":`);
+
+    // Version always first
+    stat('version', d.version, 'int');
+    stat('tier_name', d.tier);
+    stat('item_type', d.item_type || 'none');
+    if (d.material) stat('material', d.material);
+
+    // Stats
+    if (d.health)          stat('health',    d.health,    'int');
+    if (d.defense)         stat('defense',   d.defense,   'int');
+    if (d.speed != null && d.speed !== 0) stat('speed', d.speed, 'int');
+    if (d.strength)        stat('strength',  d.strength,  'int');
+    if (d.damage)          stat('damage',    d.damage,    'int');
+    if (d.cooldown)        stat('cooldown',  d.cooldown);
+    if (d.farming_fortune)  stat('farming_fortune',  d.farming_fortune,  'int');
+    if (d.enchanted_chance) stat('enchanted_chance', d.enchanted_chance, 'int');
+    if (d.mining_speed)    stat('mining_speed',   d.mining_speed,  'int');
+    if (d.mining_fortune)  stat('mining_fortune', d.mining_fortune,'int');
+    if (d.fishing_power)   stat('fishing_power',  d.fishing_power, 'int');
+    if (d.fishing_speed)   stat('fishing_speed',  d.fishing_speed, 'int');
+    if (d.fishing_control) stat('fishing_control',d.fishing_control,'int');
+    if (d.fishing_luck)    stat('fishing_luck',   d.fishing_luck,  'int');
+
+    // Colors
+    if (d.primary)   stat('palette;primary',   d.primary);
+    if (d.secondary) stat('palette;secondary', d.secondary);
+
+    // Set / ability
+    if (d.set_name) {
+      stat('set;name', d.set_name);
+      if (d.set_desc) stat('set;desc', d.set_desc);
+    }
+    if (d.ab_name) {
+      stat('ability;name', d.ab_name);
+      if (d.ab_desc)  stat('ability;desc', d.ab_desc);
+      if (d.ab_color) stat('ability;color', d.ab_color);
+    }
+
+    // Lore
+    if (d.flavor)      stat('flavor', d.flavor);
+    if (d.custom_lore) stat('info;custom_lore', d.custom_lore);
+
+    // Flags
+    if (d.has_enchants) { L(`    if {_stat} is "has_enchants":`); L(`        return true`); }
+    if (d.has_glint)    { L(`    if {_stat} is "info;has_glint":`); L(`        return true`); }
+    if (d.reforgeable)  { L(`    if {_stat} is "info;reforgeable":`); L(`        return true`); }
+    if (d.upgradeable)  { L(`    if {_stat} is "info;upgradeable":`); L(`        return true`); }
+
+    // Default enchant slots (empty)
+    if (d.ench1_id) { L(`    # Default enchant_1: ${d.ench1_id}:${d.ench1_lvl} (set via enchant UI, not getMasterStat)`); }
+    if (d.ench2_id) { L(`    # Default enchant_2: ${d.ench2_id}:${d.ench2_lvl}`); }
+
+    // Build colored HTML output
+    const raw = lines.join('\n');
+    const html = raw
+      .replace(/(    if \{_id\} is ")([^"]+)(")/g, (_, a, id, c) =>
+        `${escHtml(a)}<span class="code-id">${escHtml(id)}</span>${escHtml(c)}`)
+      .replace(/(    if \{_stat\} is ")([^"]+)(")/g, (_, a, k, c) =>
+        `<span class="code-keyword">${escHtml(a)}</span><span class="code-string">${escHtml(k)}</span><span class="code-keyword">${escHtml(c)}</span>`)
+      .replace(/(        return )("[^"]*")/g, (_, a, v) =>
+        `${escHtml(a)}<span class="code-value">${escHtml(v)}</span>`)
+      .replace(/(        return )(\d+|true|false)/g, (_, a, v) =>
+        `${escHtml(a)}<span class="code-value">${v}</span>`)
+      .replace(/(    # .+)/g, m =>
+        `<span class="code-comment">${escHtml(m)}</span>`);
+
+    this.g('code-output').innerHTML = html;
+  },
+
+  copyCode() {
+    const d = this.getData();
+    if (!d.id) return toast('No item ID set.', true);
+
+    // Re-generate plain text
+    const lines = [];
+    const L = (s) => lines.push(s);
+    const stat = (key, val, type = 'string') => {
+      if (val === null || val === undefined || val === '') return;
+      const q = type === 'string' ? `"${val}"` : `${val}`;
+      L(`    if {_stat} is "${key}":`);
+      L(`        return ${q}`);
+    };
+
+    L(`    if {_id} is "${d.id}":`);
+    stat('version', d.version, 'int');
+    stat('tier_name', d.tier);
+    stat('item_type', d.item_type || 'none');
+    if (d.material) stat('material', d.material);
+    if (d.health)         stat('health',    d.health,    'int');
+    if (d.defense)        stat('defense',   d.defense,   'int');
+    if (d.speed != null && d.speed !== 0) stat('speed', d.speed, 'int');
+    if (d.strength)       stat('strength',  d.strength,  'int');
+    if (d.damage)         stat('damage',    d.damage,    'int');
+    if (d.cooldown)       stat('cooldown',  d.cooldown);
+    if (d.farming_fortune)  stat('farming_fortune',  d.farming_fortune,  'int');
+    if (d.enchanted_chance) stat('enchanted_chance', d.enchanted_chance, 'int');
+    if (d.mining_speed)   stat('mining_speed',   d.mining_speed,  'int');
+    if (d.mining_fortune) stat('mining_fortune', d.mining_fortune,'int');
+    if (d.fishing_power)  stat('fishing_power',  d.fishing_power, 'int');
+    if (d.fishing_speed)  stat('fishing_speed',  d.fishing_speed, 'int');
+    if (d.fishing_control)stat('fishing_control',d.fishing_control,'int');
+    if (d.fishing_luck)   stat('fishing_luck',   d.fishing_luck,  'int');
+    if (d.primary)   stat('palette;primary',   d.primary);
+    if (d.secondary) stat('palette;secondary', d.secondary);
+    if (d.set_name) { stat('set;name', d.set_name); if (d.set_desc) stat('set;desc', d.set_desc); }
+    if (d.ab_name)  { stat('ability;name', d.ab_name); if (d.ab_desc) stat('ability;desc', d.ab_desc); if (d.ab_color) stat('ability;color', d.ab_color); }
+    if (d.flavor)      stat('flavor', d.flavor);
+    if (d.custom_lore) stat('info;custom_lore', d.custom_lore);
+    if (d.has_enchants) { L(`    if {_stat} is "has_enchants":`); L(`        return true`); }
+    if (d.has_glint)    { L(`    if {_stat} is "info;has_glint":`);  L(`        return true`); }
+    if (d.reforgeable)  { L(`    if {_stat} is "info;reforgeable":`); L(`        return true`); }
+    if (d.upgradeable)  { L(`    if {_stat} is "info;upgradeable":`); L(`        return true`); }
+
+    navigator.clipboard.writeText(lines.join('\n'));
+    toast('Code copied to clipboard!');
+  },
+
+  // ── SAVE / LOAD ──
+  saveItem() {
+    const d = this.getData();
+    if (!d.id) return toast('Set an Item ID first.', true);
+
+    const idx = this.savedItems.findIndex(i => i.id === d.id);
+    if (idx >= 0) this.savedItems[idx] = d;
+    else this.savedItems.push(d);
+
+    localStorage.setItem('brume_items', JSON.stringify(this.savedItems));
+    toast(`Saved: ${d.id}`);
+    this.renderSaved();
+  },
+
+  loadItem(d) {
+    this.g('f-id').value = d.id || '';
+    this.g('f-category').value = d.category || 'armor';
+    this.g('f-tier').value = d.tier || 'COMMON';
+    this.g('f-item-type').value = d.item_type || '';
+    this.g('f-version').value = d.version || 1;
+    this.g('f-material').value = d.material || '';
+    this.g('f-primary').value = d.primary || '';
+    this.g('f-secondary').value = d.secondary || '';
+    this.g('f-has-enchants').checked = d.has_enchants || false;
+    this.g('f-has-glint').checked = d.has_glint || false;
+    this.g('f-reforgeable').checked = d.reforgeable || false;
+    this.g('f-upgradeable').checked = d.upgradeable || false;
+    this.g('f-health').value = d.health ?? '';
+    this.g('f-defense').value = d.defense ?? '';
+    this.g('f-speed').value = d.speed ?? '';
+    this.g('f-strength').value = d.strength ?? '';
+    this.g('f-damage').value = d.damage ?? '';
+    this.g('f-cooldown').value = d.cooldown || '';
+    this.g('f-farming-fortune').value = d.farming_fortune ?? '';
+    this.g('f-enchanted-chance').value = d.enchanted_chance ?? '';
+    this.g('f-mining-speed').value = d.mining_speed ?? '';
+    this.g('f-mining-fortune').value = d.mining_fortune ?? '';
+    this.g('f-fishing-power').value = d.fishing_power ?? '';
+    this.g('f-fishing-speed').value = d.fishing_speed ?? '';
+    this.g('f-fishing-control').value = d.fishing_control ?? '';
+    this.g('f-fishing-luck').value = d.fishing_luck ?? '';
+    this.g('f-set-name').value = d.set_name || '';
+    this.g('f-set-desc').value = d.set_desc || '';
+    this.g('f-ab-name').value = d.ab_name || '';
+    this.g('f-ab-desc').value = d.ab_desc || '';
+    this.g('f-ab-color').value = d.ab_color || '';
+    this.g('f-flavor').value = d.flavor || '';
+    this.g('f-custom-lore').value = d.custom_lore || '';
+    this.g('f-ench1-id').value = d.ench1_id || '';
+    this.g('f-ench1-lvl').value = d.ench1_lvl || 1;
+    this.g('f-ench2-id').value = d.ench2_id || '';
+    this.g('f-ench2-lvl').value = d.ench2_lvl || 1;
+    this.update();
+    toast(`Loaded: ${d.id}`);
+  },
+
+  deleteItem(id) {
+    this.savedItems = this.savedItems.filter(i => i.id !== id);
+    localStorage.setItem('brume_items', JSON.stringify(this.savedItems));
+    this.renderSaved();
+    toast(`Deleted: ${id}`);
+  },
+
+  newItem() {
+    ['f-id','f-material','f-primary','f-secondary','f-item-type',
+     'f-health','f-defense','f-speed','f-strength','f-damage','f-cooldown',
+     'f-farming-fortune','f-enchanted-chance','f-mining-speed','f-mining-fortune',
+     'f-fishing-power','f-fishing-speed','f-fishing-control','f-fishing-luck',
+     'f-set-name','f-set-desc','f-ab-name','f-ab-desc','f-ab-color',
+     'f-flavor','f-custom-lore'
+    ].forEach(id => { if(this.g(id)) this.g(id).value = ''; });
+    ['f-has-enchants','f-has-glint','f-reforgeable','f-upgradeable'].forEach(id => {
+      if(this.g(id)) this.g(id).checked = false;
+    });
+    this.g('f-tier').value = 'COMMON';
+    this.g('f-version').value = 1;
+    this.g('f-ench1-id').value = '';
+    this.g('f-ench2-id').value = '';
+    this.update();
+  },
+
+  loadSaved() {
+    this.setRightTab('saved', document.querySelectorAll('#right-tabs .tab')[1]);
+  },
+
+  renderSaved() {
+    const el = this.g('saved-list');
+    if (!this.savedItems.length) {
+      el.innerHTML = '<p style="font-size:10px;color:var(--dimmer);text-align:center;padding:24px;">No saved items yet.</p>';
+      return;
+    }
+
+    const TIER_EMOJI = { COMMON:'⬜', UNCOMMON:'🟩', RARE:'🟦', EPIC:'🟪', LEGENDARY:'🟨' };
+    el.innerHTML = this.savedItems.map((item, i) =>
+      `<div class="saved-item" onclick="editor.loadItem(editor.savedItems[${i}])">
+        <div class="saved-item-icon">${TIER_EMOJI[item.tier] || '⬜'}</div>
+        <div style="flex:1;">
+          <div class="saved-item-name">${escHtml(item.id)}</div>
+          <div class="saved-item-id">${item.tier} · ${item.item_type || 'no type'}</div>
+        </div>
+        <button class="btn danger sm" onclick="event.stopPropagation();editor.deleteItem('${item.id}')">✕</button>
+      </div>`
+    ).join('');
+  }
+};
+
+function toast(msg, err = false) {
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2500);
+}
+
+// Init
+editor.update();
+editor.renderSaved();
+</script>
+</body>
+</html>
