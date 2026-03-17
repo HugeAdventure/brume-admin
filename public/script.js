@@ -1,8 +1,7 @@
 const app = {
-    session: null, // Holds { token, user: { username, role } }
+    session: null,
 
     init() {
-        // Check if already logged in
         const savedSession = localStorage.getItem('brume_session');
         if (savedSession) {
             this.session = JSON.parse(savedSession);
@@ -10,15 +9,14 @@ const app = {
         }
     },
 
-    // --- AUTHENTICATION ---
     async login(e) {
-        e.preventDefault(); // Prevents the page from refreshing!
+        e.preventDefault();
         const user = document.getElementById('auth-user').value;
         const pass = document.getElementById('auth-pass').value;
         const btn = document.getElementById('login-btn');
         const err = document.getElementById('auth-error');
-        
-        btn.innerText = "Authenticating...";
+
+        btn.innerText = "AUTHENTICATING...";
         err.innerText = "";
 
         try {
@@ -30,16 +28,15 @@ const app = {
 
             if (res.error) throw new Error(res.error);
 
-            // Save Session
             this.session = { token: res.token, user: res.user };
             localStorage.setItem('brume_session', JSON.stringify(this.session));
-            
+
             this.unlockUI();
             this.toast("Welcome back, " + this.session.user.username);
 
         } catch (error) {
-            err.innerText = error.message;
-            btn.innerText = "Sign In";
+            err.innerText = "// " + error.message;
+            btn.innerText = "AUTHENTICATE";
         }
     },
 
@@ -48,48 +45,46 @@ const app = {
         location.reload();
     },
 
-    // --- CORE API REQUESTER ---
     async req(mode, method = 'GET', body = null) {
         if (!this.session) return { error: "No session" };
-        
-        const opts = { 
-            method, 
-            headers: { 
+
+        const opts = {
+            method,
+            headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.session.token}` 
-            } 
+                'Authorization': `Bearer ${this.session.token}`
+            }
         };
         if (body) opts.body = JSON.stringify(body);
-        
+
         const res = await fetch(`/api/ops?mode=${mode}`, opts).then(r => r.json());
-        
-        // Handle expired token
-        if (res.error === "Session expired or invalid") {
-            this.logout();
-        }
+
+        if (res.error === "Session expired or invalid") this.logout();
         return res;
     },
 
-    // --- UI RENDERING ---
     async unlockUI() {
         document.getElementById('auth-layer').style.display = 'none';
         document.getElementById('dashboard-layer').style.display = 'flex';
-        
-        // Populate Profile Box
+
         document.getElementById('profile-name').innerText = this.session.user.username;
         document.getElementById('profile-role').innerText = this.session.user.role.toUpperCase();
         document.getElementById('profile-avatar').innerText = this.session.user.username.charAt(0).toUpperCase();
 
+        // Apply role badge class
+        const badge = document.getElementById('profile-role');
+        badge.className = 'badge ' + this.session.user.role;
+
         this.applyRolePermissions();
-        
-        // Load initial data based on permission
+
         if (['admin', 'mod'].includes(this.session.user.role)) {
             this.loadStats();
-            this.loadLogs(); // Load logs automatically
+            this.loadLogs();
+            this.loadOverviewLogs();
         }
-        
+
         if (this.session.user.role === 'admin') {
-            this.loadStaff(); // Load staff directory automatically
+            this.loadStaff();
         }
     },
 
@@ -101,9 +96,8 @@ const app = {
         links.forEach(link => {
             const allowedRoles = link.getAttribute('data-roles').split(',');
             if (!allowedRoles.includes(role)) {
-                link.style.display = 'none'; // Hide links user can't access
+                link.style.display = 'none';
             } else if (!firstAvailableView) {
-                // Find the first tab they DO have access to
                 firstAvailableView = link.getAttribute('onclick').match(/'([^']+)'/)[1];
             }
         });
@@ -114,11 +108,9 @@ const app = {
     navigate(viewId) {
         document.querySelectorAll('.view-page').forEach(e => e.classList.remove('active'));
         document.getElementById(`view-${viewId}`).classList.add('active');
-        
+
         document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
-        if (event && event.target) {
-            event.target.classList.add('active');
-        }
+        if (event && event.target) event.target.classList.add('active');
     },
 
     toast(msg, type = "success") {
@@ -132,15 +124,31 @@ const app = {
 
     async loadStats() {
         const res = await this.req('stats');
-        
-        if (res.error) {
-            console.error(res.error);
-            return this.toast("Stats Error: " + res.error, "error");
-        }
+        if (res.error) return this.toast("Stats: " + res.error, "error");
 
         document.getElementById('stat-users').innerText = res.user_count || 0;
-        document.getElementById('stat-eco').innerText = Number(res.total_economy || 0).toLocaleString() + " Coins";
+        document.getElementById('stat-eco').innerText = Number(res.total_economy || 0).toLocaleString() + " ◎";
         document.getElementById('stat-rich').innerText = res.top_player || "None";
+    },
+
+    async loadOverviewLogs() {
+        const res = await this.req('logs');
+        const container = document.getElementById('overview-logs-container');
+        if (res.error || !res.length) {
+            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:4px 0;">No recent activity.</p>`;
+            return;
+        }
+
+        // Show 5 most recent entries as a compact list
+        const recent = res.slice(0, 5);
+        container.innerHTML = recent.map(l => {
+            const date = new Date(l.timestamp).toLocaleString('en-GB', { hour12: false });
+            return `<div style="display:flex;gap:16px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--border-dim);">
+                <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);white-space:nowrap;">${date}</span>
+                <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent-bright);white-space:nowrap;">${l.username}</span>
+                <span style="font-size:13px;color:var(--text-secondary);">${l.action}</span>
+            </div>`;
+        }).join('') + `<div style="padding-top:12px;"><button class="nav-link" style="padding:0;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--accent);" onclick="app.navigate('logs')">VIEW ALL LOGS →</button></div>`;
     },
 
     async savePlayer() {
@@ -151,12 +159,12 @@ const app = {
             level: document.getElementById('inp-level').value
         };
         const res = await this.req('update', 'POST', body);
-        
+
         if (res.error) this.toast(res.error, "error");
         else {
-            this.toast("Player data updated successfully.");
+            this.toast("Player record updated.");
             this.loadLogs();
-            this.loadStats(); 
+            this.loadStats();
         }
     },
 
@@ -165,45 +173,47 @@ const app = {
         if (res.error) return;
 
         let html = `<table class="data-table">
-            <thead><tr><th>ID</th><th>Username</th><th>Role</th></tr></thead><tbody>`;
-        
+            <thead><tr><th>ID</th><th>Username</th><th>Access Level</th></tr></thead><tbody>`;
+
         res.forEach(s => {
             html += `<tr>
-                <td class="text-dim">#${s.id}</td>
-                <td style="font-weight:600;">${s.username}</td>
+                <td class="mono" style="color:var(--text-dim);">#${s.id}</td>
+                <td class="bold">${s.username}</td>
                 <td><span class="badge ${s.role}">${s.role}</span></td>
             </tr>`;
         });
+
         html += `</tbody></table>`;
         document.getElementById('staff-table-container').innerHTML = html;
     },
 
     async loadLogs() {
         const res = await this.req('logs');
-        
+        const container = document.getElementById('logs-table-container');
+
         if (res.error) {
-            document.getElementById('logs-table-container').innerHTML = `<p style="padding: 24px; color: var(--danger);">Error: ${res.error}</p>`;
-            return this.toast("Logs DB Error: " + res.error, "error");
+            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
+            return this.toast("Logs: " + res.error, "error");
         }
 
         let html = `<table class="data-table">
-            <thead><tr><th>Timestamp</th><th>Staff Member</th><th>Action Taken</th></tr></thead><tbody>`;
-        
+            <thead><tr><th>Timestamp</th><th>Staff Member</th><th>Action</th></tr></thead><tbody>`;
+
         if (res.length === 0) {
-            html += `<tr><td colspan="3" style="text-align:center; padding: 24px; color: var(--text-dim);">No recent actions found.</td></tr>`;
+            html += `<tr><td colspan="3" style="text-align:center;padding:32px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No entries found</td></tr>`;
         } else {
             res.forEach(l => {
-                const date = new Date(l.timestamp).toLocaleString();
+                const date = new Date(l.timestamp).toLocaleString('en-GB', { hour12: false });
                 html += `<tr>
-                    <td class="text-dim">${date}</td>
-                    <td style="font-weight:600;">${l.username}</td>
-                    <td>${l.action}</td>
+                    <td class="mono" style="color:var(--text-dim);white-space:nowrap;">${date}</td>
+                    <td class="bold mono" style="color:var(--accent-bright);">${l.username}</td>
+                    <td style="color:var(--text-secondary);">${l.action}</td>
                 </tr>`;
             });
         }
-        
+
         html += `</tbody></table>`;
-        document.getElementById('logs-table-container').innerHTML = html;
+        container.innerHTML = html;
     },
 
     async lookupPlayer() {
