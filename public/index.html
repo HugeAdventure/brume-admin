@@ -247,12 +247,25 @@
                     <div class="stat-card"><div class="stat-card-icon" style="background:var(--amber-dim);border-color:rgba(255,184,48,0.2);">⧗</div><span class="stat-label">Avg Session</span><div class="stat-value text-gold" id="a-avg-session">—</div></div>
                 </div>
 
-                <!-- Inflation chart -->
+                <!-- Inflation chart — full width, prominent -->
                 <div class="card" style="margin-bottom:16px;">
-                    <div class="card-title">Economy Inflation</div>
-                    <div style="position:relative;height:220px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+                        <div class="card-title" style="margin-bottom:0;">Economy Inflation</div>
+                        <div style="display:flex;gap:16px;align-items:center;">
+                            <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">
+                                <span style="display:inline-block;width:20px;height:2px;background:var(--accent);vertical-align:middle;margin-right:6px;"></span>Total Coins
+                            </span>
+                            <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">
+                                <span style="display:inline-block;width:20px;height:2px;background:var(--green);vertical-align:middle;margin-right:6px;border-top:2px dashed var(--green);"></span>Players Online
+                            </span>
+                            <span id="eco-anomaly-badge" style="display:none;font-family:'Space Mono',monospace;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.3);padding:3px 10px;border-radius:2px;letter-spacing:1px;">⚠ ANOMALY DETECTED</span>
+                        </div>
+                    </div>
+                    <div style="position:relative;height:340px;">
                         <canvas id="eco-chart"></canvas>
                     </div>
+                    <!-- Spike annotations row -->
+                    <div id="eco-annotations" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"></div>
                 </div>
 
                 <!-- Retention + Heatmap row -->
