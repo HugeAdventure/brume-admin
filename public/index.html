@@ -54,48 +54,35 @@
 
             <div class="nav-section">
                 <span class="nav-label">Moderation</span>
-                <button class="nav-link active" data-roles="admin,mod" onclick="app.navigate('overview')">
-                    Overview
-                </button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('players')">
-                    Online Players
-                </button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">
-                    Player Database
-                </button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('bans')">
-                    Bans &amp; Warnings
-                </button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('logs')">
-                    Audit Logs
-                </button>
+                <button class="nav-link active" data-roles="admin,mod" onclick="app.navigate('overview')">Overview</button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('players')">Online Players</button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">Player Database</button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('bans')">Bans &amp; Warnings</button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('logs')">Audit Logs</button>
             </div>
 
             <div class="nav-section">
                 <span class="nav-label">Analytics</span>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('analytics')">
-                    Analytics
-                </button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('analytics')">Analytics</button>
             </div>
 
             <div class="nav-section">
                 <span class="nav-label">Administration</span>
-                <button class="nav-link" data-roles="admin" onclick="app.navigate('staff')">
-                    Staff Directory
-                </button>
-                <button class="nav-link" data-roles="admin" onclick="app.navigate('console')">
-                    Server Console
-                </button>
+                <button class="nav-link" data-roles="admin" onclick="app.navigate('staff')">Staff Management</button>
+                <button class="nav-link" data-roles="admin" onclick="app.navigate('console')">Server Console</button>
             </div>
 
             <div class="nav-section">
                 <span class="nav-label">Development</span>
-                <button class="nav-link" data-roles="admin,dev" onclick="app.navigate('generator')">
-                    Item Architect
-                </button>
+                <button class="nav-link" data-roles="admin,dev" onclick="app.navigate('generator')">Item Architect</button>
             </div>
 
             <div class="sidebar-footer">
+                <button class="nav-link" onclick="app.openSearch()" style="color:var(--text-secondary);margin-bottom:4px;">
+                    <span style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;">⌕ SEARCH</span>
+                    <span style="float:right;font-family:'Space Mono',monospace;font-size:9px;background:var(--bg-raised);border:1px solid var(--border-mid);padding:1px 6px;border-radius:2px;color:var(--text-dim);">Ctrl+K</span>
+                </button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('settings')" style="color:var(--text-secondary);margin-bottom:4px;">⚙ Settings</button>
                 <button class="nav-link text-danger" onclick="app.logout()">Sign Out</button>
             </div>
         </aside>
@@ -210,15 +197,129 @@
                 </div>
             </div>
 
-            <!-- STAFF DIRECTORY -->
+            <!-- STAFF MANAGEMENT -->
             <div id="view-staff" class="view-page">
                 <div class="page-header">
-                    <h1>Staff Directory</h1>
-                    <p>Authorized panel users and access levels</p>
+                    <h1>Staff Management</h1>
+                    <p>Manage panel access, roles, and invite codes</p>
                 </div>
+                <!-- Create account -->
+                <div class="card" style="margin-bottom:16px;">
+                    <div class="card-title">Create Account</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;align-items:end;">
+                        <div class="input-group" style="margin:0;"><label>Username</label><input type="text" id="new-staff-user" placeholder="Username..."></div>
+                        <div class="input-group" style="margin:0;"><label>Password</label><input type="password" id="new-staff-pass" placeholder="Password..."></div>
+                        <div class="input-group" style="margin:0;">
+                            <label>Role</label>
+                            <select id="new-staff-role">
+                                <option value="mod">Mod</option>
+                                <option value="dev">Dev</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="margin:0;"><label>Invite Code</label><input type="text" id="new-staff-invite" placeholder="Required..."></div>
+                    </div>
+                    <div style="margin-top:16px;">
+                        <button class="btn-primary" style="width:auto;" onclick="app.createStaff()">CREATE ACCOUNT</button>
+                    </div>
+                </div>
+                <!-- Staff table -->
                 <div class="card" style="padding:0;">
-                    <div id="staff-table-container">
-                        <p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading staff...</p>
+                    <div style="padding:20px 24px 0;"><div class="card-title">Team Members</div></div>
+                    <div id="staff-table-container"><p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</p></div>
+                </div>
+            </div>
+
+            <!-- SETTINGS -->
+            <div id="view-settings" class="view-page">
+                <div class="page-header">
+                    <h1>Settings</h1>
+                    <p>Customise your panel experience</p>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <!-- Appearance -->
+                    <div class="card">
+                        <div class="card-title">Appearance</div>
+
+                        <div style="margin-bottom:24px;">
+                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Theme</label>
+                            <div style="display:flex;gap:8px;">
+                                <button class="theme-btn" data-theme="dark" onclick="app.setTheme('dark',this)">Dark</button>
+                                <button class="theme-btn" data-theme="midnight" onclick="app.setTheme('midnight',this)">Midnight</button>
+                                <button class="theme-btn" data-theme="light" onclick="app.setTheme('light',this)">Light</button>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom:24px;">
+                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Accent Color</label>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                                <button class="accent-swatch" data-accent="indigo" onclick="app.setAccent('indigo',this)" style="background:#5b6aff;" title="Indigo"></button>
+                                <button class="accent-swatch" data-accent="amber" onclick="app.setAccent('amber',this)" style="background:#ffb830;" title="Amber"></button>
+                                <button class="accent-swatch" data-accent="rose" onclick="app.setAccent('rose',this)" style="background:#ff4f8b;" title="Rose"></button>
+                                <button class="accent-swatch" data-accent="cyan" onclick="app.setAccent('cyan',this)" style="background:#00d4ff;" title="Cyan (coming soon)" disabled></button>
+                                <button class="accent-swatch" data-accent="emerald" onclick="app.setAccent('emerald',this)" style="background:#00e5a0;" title="Emerald (coming soon)" disabled></button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Text Size</label>
+                            <div style="display:flex;align-items:center;gap:16px;">
+                                <input type="range" id="text-size-slider" min="12" max="18" step="1" value="14" oninput="app.setTextSize(this.value)" style="flex:1;">
+                                <span id="text-size-label" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);min-width:36px;">14px</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preferences -->
+                    <div class="card">
+                        <div class="card-title">Preferences</div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Date Format</label>
+                            <div style="display:flex;gap:8px;">
+                                <button class="theme-btn" data-fmt="en-GB" onclick="app.setDateFormat('en-GB',this)">DD/MM/YYYY</button>
+                                <button class="theme-btn" data-fmt="en-US" onclick="app.setDateFormat('en-US',this)">MM/DD/YYYY</button>
+                                <button class="theme-btn" data-fmt="iso" onclick="app.setDateFormat('iso',this)">ISO 8601</button>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Sidebar</label>
+                            <div style="display:flex;gap:8px;">
+                                <button class="theme-btn" data-sidebar="expanded" onclick="app.setSidebar('expanded',this)">Expanded</button>
+                                <button class="theme-btn" data-sidebar="compact" onclick="app.setSidebar('compact',this)">Compact</button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Anomaly Threshold</label>
+                            <div style="display:flex;align-items:center;gap:16px;">
+                                <input type="range" id="anomaly-slider" min="5" max="50" step="5" value="20" oninput="app.setAnomalyThreshold(this.value)" style="flex:1;">
+                                <span id="anomaly-label" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);min-width:36px;">20%</span>
+                            </div>
+                            <p style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:8px;">// Flag economy changes above this % as anomalies</p>
+                        </div>
+                    </div>
+
+                    <!-- Account -->
+                    <div class="card">
+                        <div class="card-title">Your Account</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                            <div class="input-group" style="margin:0;"><label>New Password</label><input type="password" id="change-pass" placeholder="New password..."></div>
+                            <div class="input-group" style="margin:0;"><label>Confirm Password</label><input type="password" id="change-pass-confirm" placeholder="Confirm..."></div>
+                        </div>
+                        <button class="btn-primary" style="width:auto;" onclick="app.changePassword()">UPDATE PASSWORD</button>
+                    </div>
+
+                    <!-- Danger zone -->
+                    <div class="card" style="border-color:rgba(255,71,87,0.2);">
+                        <div class="card-title" style="color:var(--red);">Danger Zone</div>
+                        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);margin-bottom:16px;line-height:1.7;">// These actions are irreversible. Proceed with caution.</p>
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                            <button class="btn-sm btn-red" onclick="app.clearEconomySnapshots()">PURGE ECONOMY SNAPSHOTS</button>
+                            <button class="btn-sm btn-red" onclick="app.clearSessionLogs()">PURGE SESSION LOGS</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -396,12 +497,103 @@
         </main>
     </div>
 
+    <!-- ═══ GLOBAL SEARCH OVERLAY ═══ -->
+    <div id="search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:flex-start;justify-content:center;padding-top:100px;" onclick="if(event.target===this)app.closeSearch()">
+        <div style="width:100%;max-width:620px;background:var(--bg-panel);border:1px solid var(--border-bright);border-radius:4px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6);">
+            <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border-dim);">
+                <span style="font-size:18px;color:var(--text-dim);">⌕</span>
+                <input type="text" id="search-input" placeholder="Search players, logs, punishments..." style="flex:1;background:transparent;border:none;font-size:15px;font-family:'Syne',sans-serif;outline:none;" oninput="app.doSearch(this.value)" onkeydown="app.searchKeydown(event)">
+                <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);cursor:pointer;" onclick="app.closeSearch()">ESC</span>
+            </div>
+            <div id="search-results" style="max-height:420px;overflow-y:auto;">
+                <div style="padding:24px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Start typing to search...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ PLAYER PROFILE MODAL ═══ -->
+    <div id="profile-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1001;align-items:center;justify-content:center;" onclick="if(event.target===this)app.closeProfileModal()">
+        <div style="width:100%;max-width:820px;max-height:90vh;background:var(--bg-panel);border:1px solid var(--border-bright);border-radius:4px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 80px rgba(0,0,0,0.6);">
+            <!-- Modal header -->
+            <div style="display:flex;align-items:center;gap:16px;padding:24px 28px;border-bottom:1px solid var(--border-dim);flex-shrink:0;">
+                <div id="modal-avatar" style="width:48px;height:48px;clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:18px;color:white;flex-shrink:0;">?</div>
+                <div style="flex:1;">
+                    <h2 id="modal-name" style="font-size:22px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px;">Loading...</h2>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <span id="modal-uuid" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
+                        <span id="modal-status-badge"></span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-sm" onclick="app.modalEditPlayer()">EDIT</button>
+                    <button class="btn-sm btn-red" onclick="app.modalBanPlayer()">BAN</button>
+                    <button class="btn-sm" onclick="app.closeProfileModal()" style="color:var(--text-dim);">✕</button>
+                </div>
+            </div>
+            <!-- Modal body -->
+            <div style="overflow-y:auto;flex:1;padding:24px 28px;">
+                <!-- Stat strip -->
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
+                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Coins</span>
+                        <span id="modal-coins" style="font-size:20px;font-weight:800;color:var(--amber);">—</span>
+                    </div>
+                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Level</span>
+                        <span id="modal-level" style="font-size:20px;font-weight:800;color:var(--purple);">—</span>
+                    </div>
+                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Playtime</span>
+                        <span id="modal-playtime" style="font-size:20px;font-weight:800;color:var(--green);">—</span>
+                    </div>
+                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Sessions</span>
+                        <span id="modal-sessions" style="font-size:20px;font-weight:800;">—</span>
+                    </div>
+                </div>
+                <!-- Coin history chart -->
+                <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;margin-bottom:16px;">
+                    <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Coin History</div>
+                    <div style="position:relative;height:120px;"><canvas id="modal-chart"></canvas></div>
+                </div>
+                <!-- Punishments + recent sessions side by side -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
+                        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Punishment History</div>
+                        <div id="modal-punishments" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</div>
+                    </div>
+                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
+                        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Recent Sessions</div>
+                        <div id="modal-sessions-list" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ CONFIRM MODAL ═══ -->
+    <div id="confirm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1002;align-items:center;justify-content:center;" onclick="if(event.target===this)app.closeConfirm()">
+        <div style="width:100%;max-width:420px;background:var(--bg-panel);border:1px solid var(--border-bright);border-radius:4px;padding:32px;box-shadow:0 40px 80px rgba(0,0,0,0.6);">
+            <h3 id="confirm-title" style="font-size:18px;font-weight:800;margin-bottom:8px;">Confirm</h3>
+            <p id="confirm-body" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);margin-bottom:24px;line-height:1.7;"></p>
+            <div style="display:flex;gap:10px;">
+                <button id="confirm-ok" class="btn-primary btn-red" style="width:auto;" onclick="app._confirmResolve(true)">CONFIRM</button>
+                <button class="btn-sm" style="padding:10px 20px;" onclick="app._confirmResolve(false)">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Live clock
         setInterval(() => {
             const el = document.getElementById('current-time');
             if (el) el.innerText = new Date().toLocaleTimeString('en-GB');
         }, 1000);
+        // Global search shortcut
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); app.openSearch(); }
+            if (e.key === 'Escape') { app.closeSearch(); app.closeProfileModal(); app.closeConfirm(); }
+        });
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <script src="script.js"></script>
