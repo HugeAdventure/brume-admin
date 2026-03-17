@@ -58,7 +58,7 @@ export default async function handler(req, res) {
         }
 
         if (mode === 'staff_list' && currentUser.role === 'admin') {
-            const [admins] = await db.execute('SELECT id, username, role, created_at FROM admins ORDER BY role ASC');
+            const [admins] = await db.execute('SELECT id, username, role FROM admins ORDER BY role ASC');
             return res.json(admins);
         }
 
