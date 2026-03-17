@@ -257,6 +257,106 @@ export default async function handler(req, res) {
             return res.json({ success: true, output: output || '(no output)' });
         }
 
+        // ════ ANALYTICS ════
+
+        // Economy inflation — hourly snapshots for the last N days
+        if (mode === 'analytics_economy' && ROLES.modOrAbove.includes(user.role)) {
+            const days = parseInt(req.query.days) || 30;
+            const [rows] = await db.execute(
+                `SELECT
+                    DATE_FORMAT(snapped_at, '%Y-%m-%d %H:00') as hour,
+                    total_coins, total_players, avg_coins, max_coins
+                 FROM economy_snapshots
+                 WHERE snapped_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                 ORDER BY snapped_at ASC`,
+                [days]
+            );
+            // Also get all-time high
+            const [[peak]] = await db.execute(
+                `SELECT MAX(total_coins) as peak_coins, MAX(total_players) as peak_players FROM economy_snapshots`
+            );
+            return res.json({ snapshots: rows, peak });
+        }
+
+        // Playtime heatmap — avg sessions by hour-of-day × day-of-week
+        if (mode === 'analytics_heatmap' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT
+                    DAYOFWEEK(joined_at) - 1 AS day_of_week,
+                    HOUR(joined_at)          AS hour_of_day,
+                    COUNT(*)                 AS session_count,
+                    AVG(duration_s)          AS avg_duration_s
+                 FROM session_log
+                 WHERE joined_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+                   AND duration_s IS NOT NULL
+                 GROUP BY day_of_week, hour_of_day
+                 ORDER BY day_of_week, hour_of_day`
+            );
+            return res.json(rows);
+        }
+
+        // Retention — new vs returning players per week
+        if (mode === 'analytics_retention' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT
+                    YEARWEEK(joined_at, 1)                         AS yw,
+                    MIN(DATE(joined_at))                           AS week_start,
+                    COUNT(DISTINCT uuid)                           AS total_players,
+                    COUNT(DISTINCT CASE
+                        WHEN joined_at = (SELECT MIN(s2.joined_at) FROM session_log s2 WHERE s2.uuid = session_log.uuid)
+                        THEN uuid END)                             AS new_players,
+                    COUNT(DISTINCT CASE
+                        WHEN joined_at > (SELECT MIN(s2.joined_at) FROM session_log s2 WHERE s2.uuid = session_log.uuid)
+                        THEN uuid END)                             AS returning_players
+                 FROM session_log
+                 WHERE joined_at >= DATE_SUB(NOW(), INTERVAL 12 WEEK)
+                 GROUP BY yw
+                 ORDER BY yw ASC`
+            );
+            return res.json(rows);
+        }
+
+        // Player growth history — stat snapshots for one player
+        if (mode === 'analytics_player' && ROLES.modOrAbove.includes(user.role)) {
+            const { uuid } = req.query;
+            if (!uuid) return res.status(400).json({ error: "uuid required" });
+            const [rows] = await db.execute(
+                `SELECT coins, level, xp, snapped_at
+                 FROM player_snapshots
+                 WHERE uuid = ?
+                 ORDER BY snapped_at ASC
+                 LIMIT 365`,
+                [uuid]
+            );
+            return res.json(rows);
+        }
+
+        // Leaderboards — top players by various metrics
+        if (mode === 'analytics_leaderboard' && ROLES.modOrAbove.includes(user.role)) {
+            const [byCoins] = await db.execute(
+                `SELECT name, coins, level, total_playtime_s, session_count
+                 FROM brume_stats ORDER BY coins DESC LIMIT 10`
+            );
+            const [byPlaytime] = await db.execute(
+                `SELECT name, total_playtime_s, session_count, coins, level
+                 FROM brume_stats ORDER BY total_playtime_s DESC LIMIT 10`
+            );
+            const [byLevel] = await db.execute(
+                `SELECT name, level, xp, coins, total_playtime_s
+                 FROM brume_stats ORDER BY level DESC, xp DESC LIMIT 10`
+            );
+            // Server-wide totals
+            const [[totals]] = await db.execute(
+                `SELECT
+                    COUNT(*) as total_players,
+                    SUM(total_playtime_s) as total_playtime_s,
+                    SUM(session_count) as total_sessions,
+                    AVG(total_playtime_s) as avg_playtime_s
+                 FROM brume_stats`
+            );
+            return res.json({ byCoins, byPlaytime, byLevel, totals });
+        }
+
         return res.status(403).json({ error: "Forbidden: No permission." });
 
     } catch (error) {
