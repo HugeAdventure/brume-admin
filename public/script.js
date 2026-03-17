@@ -123,14 +123,63 @@ const app = {
         setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 300); }, 3000);
     },
 
-    // --- MODULES ---
     async loadStats() {
         const res = await this.req('stats');
-        if (res.error) return;
+        
+        if (res.error) {
+            console.error(res.error);
+            return this.toast("Stats Error: " + res.error, "error");
+        }
+
         document.getElementById('stat-users').innerText = res.user_count || 0;
-        document.getElementById('stat-eco').innerText = (res.total_economy || 0).toLocaleString() + " Coins";
+        document.getElementById('stat-eco').innerText = Number(res.total_economy || 0).toLocaleString() + " Coins";
         document.getElementById('stat-rich').innerText = res.top_player || "None";
     },
+
+    async savePlayer() {
+        const body = {
+            uuid: document.getElementById('val-uuid').innerText,
+            name: document.getElementById('val-name').innerText,
+            coins: document.getElementById('inp-coins').value,
+            level: document.getElementById('inp-level').value
+        };
+        const res = await this.req('update', 'POST', body);
+        
+        if (res.error) this.toast(res.error, "error");
+        else {
+            this.toast("Player data updated successfully.");
+            this.loadLogs();
+            this.loadStats(); 
+        }
+    },
+
+    async loadStaff() {
+        const res = await this.req('staff_list');
+        if (res.error) return;
+
+        let html = `<table class="data-table">
+            <thead><tr><th>ID</th><th>Username</th><th>Role</th></tr></thead><tbody>`;
+        
+        res.forEach(s => {
+            html += `<tr>
+                <td class="text-dim">#${s.id}</td>
+                <td style="font-weight:600;">${s.username}</td>
+                <td><span class="badge ${s.role}">${s.role}</span></td>
+            </tr>`;
+        });
+        html += `</tbody></table>`;
+        document.getElementById('staff-table-container').innerHTML = html;
+    },
+
+    async loadLogs() {
+        const res = await this.req('logs');
+        if (res.error) return;
+
+        let html = `<table class="data-table">
+            <thead><tr><th>Timestamp</th><th>Staff Member</th><th>Action Taken</th></tr></thead><tbody>`;
+        
+        res.forEach(l => {
+            const date = new Date(l.timestamp).toLocaleString(
 
     async lookupPlayer() {
         const q = document.getElementById('p-search').value;
@@ -144,18 +193,6 @@ const app = {
         document.getElementById('val-uuid').innerText = res.uuid;
         document.getElementById('inp-coins').value = res.coins;
         document.getElementById('inp-level').value = res.level;
-    },
-
-    async savePlayer() {
-        const body = {
-            uuid: document.getElementById('val-uuid').innerText,
-            coins: document.getElementById('inp-coins').value,
-            level: document.getElementById('inp-level').value
-        };
-        const res = await this.req('update', 'POST', body);
-        
-        if (res.error) this.toast(res.error, "error");
-        else this.toast("Player data updated successfully.");
     }
 };
 
