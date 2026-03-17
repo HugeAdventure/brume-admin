@@ -37,6 +37,21 @@
     <!-- ═══ DASHBOARD ═══ -->
     <div id="dashboard-layer" style="display: none;">
 
+        <!-- MOBILE HEADER -->
+        <div class="mobile-header">
+            <button class="hamburger" onclick="app.toggleSidebar()" aria-label="Menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div class="logo-hex" style="width:20px;height:20px;"></div>
+                <span style="font-size:16px;font-weight:800;">Brume</span>
+            </div>
+            <button class="hamburger" onclick="app.openSearch()" aria-label="Search" style="font-size:18px;display:flex;align-items:center;justify-content:center;">⌕</button>
+        </div>
+
+        <!-- SIDEBAR OVERLAY (mobile) -->
+        <div id="sidebar-overlay" onclick="app.closeSidebar()"></div>
+
         <!-- SIDEBAR -->
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -537,7 +552,7 @@
             <!-- Modal body -->
             <div style="overflow-y:auto;flex:1;padding:24px 28px;">
                 <!-- Stat strip -->
-                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
+                <div class="stat-strip-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
                     <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
                         <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Coins</span>
                         <span id="modal-coins" style="font-size:20px;font-weight:800;color:var(--amber);">—</span>
