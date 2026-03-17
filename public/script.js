@@ -81,6 +81,9 @@ const app = {
             this.loadStats();
             this.loadLogs();
             this.loadOverviewLogs();
+            // Load overview analytics summary (mini chart + week stats)
+            this.req(`analytics_economy&days=7`).then(r => { if (!r.error) { this.renderOverviewEcoChart(r); } });
+            this.req('analytics_retention').then(r => { if (!r.error) this.renderOverviewWeekStats(r); });
         }
 
         if (this.session.user.role === 'admin') {
@@ -430,17 +433,316 @@ const app = {
 
     escapeHtml(str) {
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    },
+
+    // ════ ANALYTICS ════
+    _analyticsDays: 7,
+    _charts: {},
+
+    setAnalyticsRange(days, btn) {
+        this._analyticsDays = days;
+        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.loadAnalytics();
+    },
+
+    fmtDuration(seconds) {
+        if (!seconds || seconds < 60) return `${Math.round(seconds || 0)}s`;
+        if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+        return `${(seconds / 3600).toFixed(1)}h`;
+    },
+
+    fmtCoins(n) {
+        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+        if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+        return Math.round(n).toLocaleString();
+    },
+
+    destroyChart(id) {
+        if (this._charts[id]) { this._charts[id].destroy(); delete this._charts[id]; }
+    },
+
+    chartDefaults() {
+        return {
+            color: '#8888aa',
+            borderColor: 'rgba(255,255,255,0.06)',
+            plugins: { legend: { display: false }, tooltip: {
+                backgroundColor: '#16161f',
+                borderColor: 'rgba(255,255,255,0.12)',
+                borderWidth: 1,
+                titleColor: '#eeeef5',
+                bodyColor: '#8888aa',
+                padding: 10,
+                titleFont: { family: 'Space Mono', size: 11 },
+                bodyFont: { family: 'Space Mono', size: 11 },
+            }},
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 } },
+                y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 6 } }
+            }
+        };
+    },
+
+    async loadAnalytics() {
+        const [ecoRes, heatRes, retRes, lbRes] = await Promise.all([
+            this.req(`analytics_economy&days=${this._analyticsDays}`),
+            this.req('analytics_heatmap'),
+            this.req('analytics_retention'),
+            this.req('analytics_leaderboard'),
+        ]);
+
+        if (!ecoRes.error) this.renderEcoChart(ecoRes);
+        if (!heatRes.error) this.renderHeatmap(heatRes);
+        if (!retRes.error) this.renderRetention(retRes);
+        if (!lbRes.error) this.renderLeaderboards(lbRes);
+
+        // Also load overview mini-chart
+        if (!ecoRes.error) this.renderOverviewEcoChart(ecoRes);
+        if (!retRes.error) this.renderOverviewWeekStats(retRes);
+    },
+
+    renderEcoChart(data) {
+        this.destroyChart('eco');
+        const snaps = data.snapshots || [];
+        const peak = data.peak || {};
+
+        // KPIs
+        document.getElementById('a-peak-eco').innerText = this.fmtCoins(peak.peak_coins || 0) + ' ◎';
+        if (snaps.length >= 2) {
+            const first = snaps[0].total_coins;
+            const last  = snaps[snaps.length - 1].total_coins;
+            const pct   = first > 0 ? (((last - first) / first) * 100).toFixed(1) : '0';
+            const el    = document.getElementById('a-eco-growth');
+            el.innerText = (pct >= 0 ? '+' : '') + pct + '%';
+            el.style.color = pct >= 0 ? 'var(--green)' : 'var(--red)';
+        }
+
+        const labels = snaps.map(s => {
+            const d = new Date(s.hour);
+            return this._analyticsDays <= 7
+                ? d.toLocaleDateString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+                : d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+        });
+
+        const ctx = document.getElementById('eco-chart').getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 220);
+        grad.addColorStop(0, 'rgba(91,106,255,0.25)');
+        grad.addColorStop(1, 'rgba(91,106,255,0)');
+
+        this._charts['eco'] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Total Coins',
+                        data: snaps.map(s => s.total_coins),
+                        borderColor: '#5b6aff',
+                        backgroundColor: grad,
+                        borderWidth: 2,
+                        pointRadius: snaps.length > 60 ? 0 : 3,
+                        pointBackgroundColor: '#5b6aff',
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y',
+                    },
+                    {
+                        label: 'Players',
+                        data: snaps.map(s => s.total_players),
+                        borderColor: '#00e5a0',
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        borderDash: [4, 4],
+                        tension: 0.3,
+                        yAxisID: 'y2',
+                    }
+                ]
+            },
+            options: {
+                ...this.chartDefaults(),
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 } },
+                    y:  { position: 'left',  grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 }, callback: v => this.fmtCoins(v) } },
+                    y2: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#00e5a0', font: { family: 'Space Mono', size: 10 } } }
+                }
+            }
+        });
+    },
+
+    renderOverviewEcoChart(data) {
+        this.destroyChart('ov-eco');
+        const snaps = (data.snapshots || []).slice(-24); // last 24 datapoints
+        if (!snaps.length) return;
+        const ctx = document.getElementById('overview-eco-chart');
+        if (!ctx) return;
+        const grad = ctx.getContext('2d').createLinearGradient(0, 0, 0, 80);
+        grad.addColorStop(0, 'rgba(91,106,255,0.2)');
+        grad.addColorStop(1, 'rgba(91,106,255,0)');
+        this._charts['ov-eco'] = new Chart(ctx, {
+            type: 'line',
+            data: { labels: snaps.map(() => ''), datasets: [{ data: snaps.map(s => s.total_coins), borderColor: '#5b6aff', backgroundColor: grad, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4 }] },
+            options: { animation: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } } }
+        });
+    },
+
+    renderOverviewWeekStats(data) {
+        const rows = data || [];
+        const last = rows[rows.length - 1];
+        if (!last) return;
+        document.getElementById('ov-new').innerText     = last.new_players || 0;
+        document.getElementById('ov-ret').innerText     = last.returning_players || 0;
+        document.getElementById('ov-sessions').innerText = last.total_players || 0;
+        // avg session from heatmap would need another call; leave as placeholder
+    },
+
+    renderRetention(data) {
+        this.destroyChart('ret');
+        const rows = data || [];
+
+        // Fill session KPIs from totals
+        const totalSessions = rows.reduce((s, r) => s + (r.total_players || 0), 0);
+        document.getElementById('a-sessions').innerText = totalSessions.toLocaleString();
+
+        const labels = rows.map(r => {
+            const d = new Date(r.week_start);
+            return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+        });
+
+        const ctx = document.getElementById('retention-chart').getContext('2d');
+        this._charts['ret'] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'New',       data: rows.map(r => r.new_players),       backgroundColor: 'rgba(0,229,160,0.7)',   borderRadius: 2 },
+                    { label: 'Returning', data: rows.map(r => r.returning_players), backgroundColor: 'rgba(91,106,255,0.7)',  borderRadius: 2 }
+                ]
+            },
+            options: {
+                ...this.chartDefaults(),
+                plugins: {
+                    ...this.chartDefaults().plugins,
+                    legend: { display: true, labels: { color: '#8888aa', font: { family: 'Space Mono', size: 10 }, boxWidth: 10 } }
+                },
+                scales: {
+                    x: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 } } },
+                    y: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 } } }
+                }
+            }
+        });
+    },
+
+    renderHeatmap(data) {
+        const DAYS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2,'0')}h`);
+
+        // Build lookup grid
+        const grid = {};
+        let maxVal = 0;
+        data.forEach(r => {
+            grid[`${r.day_of_week}_${r.hour_of_day}`] = r.session_count;
+            if (r.session_count > maxVal) maxVal = r.session_count;
+        });
+
+        const cellSize = 16;
+        const labelW   = 28;
+        const labelH   = 20;
+
+        let html = `<div style="overflow-x:auto;"><div style="display:inline-block;">`;
+
+        // Hour labels top
+        html += `<div style="display:flex;margin-left:${labelW}px;margin-bottom:2px;">`;
+        HOURS.forEach((h, i) => {
+            html += `<div style="width:${cellSize}px;font-family:'Space Mono',monospace;font-size:8px;color:var(--text-dim);text-align:center;overflow:hidden;">${i % 3 === 0 ? h : ''}</div>`;
+        });
+        html += `</div>`;
+
+        // Rows
+        DAYS.forEach((day, di) => {
+            html += `<div style="display:flex;align-items:center;margin-bottom:2px;">`;
+            html += `<div style="width:${labelW}px;font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);text-align:right;padding-right:6px;">${day}</div>`;
+            HOURS.forEach((_, hi) => {
+                const val = grid[`${di}_${hi}`] || 0;
+                const intensity = maxVal > 0 ? val / maxVal : 0;
+                const alpha     = 0.08 + intensity * 0.92;
+                const color     = intensity > 0.6 ? `rgba(91,106,255,${alpha})` : intensity > 0.3 ? `rgba(91,106,255,${alpha})` : `rgba(91,106,255,${alpha})`;
+                const border    = intensity > 0.5 ? '1px solid rgba(91,106,255,0.4)' : '1px solid rgba(255,255,255,0.04)';
+                html += `<div title="${day} ${hi}:00 — ${val} sessions" style="width:${cellSize}px;height:${cellSize}px;background:${color};border:${border};border-radius:2px;cursor:default;"></div>`;
+            });
+            html += `</div>`;
+        });
+
+        // Legend
+        html += `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;margin-left:${labelW}px;">`;
+        html += `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">Low</span>`;
+        [0.1,0.3,0.5,0.7,0.9].forEach(a => {
+            html += `<div style="width:14px;height:14px;background:rgba(91,106,255,${a});border-radius:2px;"></div>`;
+        });
+        html += `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">High</span>`;
+        html += `</div>`;
+
+        html += `</div></div>`;
+        document.getElementById('heatmap-container').innerHTML = html;
+    },
+
+    renderLeaderboards(data) {
+        const fmt = this.fmtDuration.bind(this);
+        const fmtC = this.fmtCoins.bind(this);
+
+        // Total sessions / avg playtime KPIs
+        if (data.totals) {
+            document.getElementById('a-avg-session').innerText = fmt(data.totals.avg_playtime_s);
+            if (!document.getElementById('a-sessions').innerText || document.getElementById('a-sessions').innerText === '—') {
+                document.getElementById('a-sessions').innerText = Number(data.totals.total_sessions || 0).toLocaleString();
+            }
+        }
+
+        const makeTable = (rows, cols) => {
+            if (!rows.length) return `<p style="padding:16px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">No data yet.</p>`;
+            return `<table class="data-table" style="font-size:12px;">
+                <thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+                <tbody>${rows.map((r, i) => `<tr>
+                    <td style="color:var(--text-dim);font-family:'Space Mono',monospace;">#${i+1}</td>
+                    ${cols.slice(1).map(c => `<td ${c.style || ''}>${c.fmt ? c.fmt(r[c.key]) : r[c.key]}</td>`).join('')}
+                </tr>`).join('')}</tbody>
+            </table>`;
+        };
+
+        document.getElementById('lb-coins').innerHTML = makeTable(data.byCoins, [
+            { label: '#' },
+            { label: 'Player', key: 'name', style: 'style="font-weight:600;"' },
+            { label: 'Coins', key: 'coins', fmt: v => `<span style="color:var(--amber)">${fmtC(v)} ◎</span>` },
+            { label: 'Lv', key: 'level', style: 'style="color:var(--text-dim);"' },
+        ]);
+
+        document.getElementById('lb-playtime').innerHTML = makeTable(data.byPlaytime, [
+            { label: '#' },
+            { label: 'Player', key: 'name', style: 'style="font-weight:600;"' },
+            { label: 'Playtime', key: 'total_playtime_s', fmt: v => `<span style="color:var(--green)">${fmt(v)}</span>` },
+            { label: 'Sessions', key: 'session_count', style: 'style="color:var(--text-dim);"' },
+        ]);
+
+        document.getElementById('lb-level').innerHTML = makeTable(data.byLevel, [
+            { label: '#' },
+            { label: 'Player', key: 'name', style: 'style="font-weight:600;"' },
+            { label: 'Level', key: 'level', fmt: v => `<span style="color:var(--purple)">${v}</span>` },
+            { label: 'Coins', key: 'coins', fmt: v => fmtC(v), style: 'style="color:var(--text-dim);"' },
+        ]);
     }
 };
 
 window.onload = () => {
     app.init();
 
+    // Kick off player polling when that view is navigated to
     const origNavigate = app.navigate.bind(app);
     app.navigate = function(viewId) {
         origNavigate(viewId);
         if (viewId === 'players') app.startPlayerPolling();
         if (viewId === 'bans') app.loadBans();
         if (viewId === 'console') app.initConsole();
+        if (viewId === 'analytics') app.loadAnalytics();
     };
 };
