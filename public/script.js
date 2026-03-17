@@ -180,20 +180,27 @@ const app = {
 
     async loadLogs() {
         const res = await this.req('logs');
-        if (res.error) return;
+        
+        if (res.error) {
+            document.getElementById('logs-table-container').innerHTML = `<p style="padding: 24px; color: var(--danger);">Error: ${res.error}</p>`;
+            return this.toast("Logs DB Error: " + res.error, "error");
+        }
 
         let html = `<table class="data-table">
             <thead><tr><th>Timestamp</th><th>Staff Member</th><th>Action Taken</th></tr></thead><tbody>`;
         
-        // This is where the code got cut off before!
-        res.forEach(l => {
-            const date = new Date(l.timestamp).toLocaleString();
-            html += `<tr>
-                <td class="text-dim">${date}</td>
-                <td style="font-weight:600;">${l.username}</td>
-                <td>${l.action}</td>
-            </tr>`;
-        });
+        if (res.length === 0) {
+            html += `<tr><td colspan="3" style="text-align:center; padding: 24px; color: var(--text-dim);">No recent actions found.</td></tr>`;
+        } else {
+            res.forEach(l => {
+                const date = new Date(l.timestamp).toLocaleString();
+                html += `<tr>
+                    <td class="text-dim">${date}</td>
+                    <td style="font-weight:600;">${l.username}</td>
+                    <td>${l.action}</td>
+                </tr>`;
+            });
+        }
         
         html += `</tbody></table>`;
         document.getElementById('logs-table-container').innerHTML = html;
