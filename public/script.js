@@ -12,7 +12,7 @@ const app = {
 
     // --- AUTHENTICATION ---
     async login(e) {
-        e.preventDefault();
+        e.preventDefault(); // Prevents the page from refreshing!
         const user = document.getElementById('auth-user').value;
         const pass = document.getElementById('auth-pass').value;
         const btn = document.getElementById('login-btn');
@@ -82,9 +82,14 @@ const app = {
 
         this.applyRolePermissions();
         
-        // Load initial data if user has permission
+        // Load initial data based on permission
         if (['admin', 'mod'].includes(this.session.user.role)) {
             this.loadStats();
+            this.loadLogs(); // Load logs automatically
+        }
+        
+        if (this.session.user.role === 'admin') {
+            this.loadStaff(); // Load staff directory automatically
         }
     },
 
@@ -111,7 +116,9 @@ const app = {
         document.getElementById(`view-${viewId}`).classList.add('active');
         
         document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
-        event.target.classList.add('active');
+        if (event && event.target) {
+            event.target.classList.add('active');
+        }
     },
 
     toast(msg, type = "success") {
@@ -178,8 +185,19 @@ const app = {
         let html = `<table class="data-table">
             <thead><tr><th>Timestamp</th><th>Staff Member</th><th>Action Taken</th></tr></thead><tbody>`;
         
+        // This is where the code got cut off before!
         res.forEach(l => {
-            const date = new Date(l.timestamp).toLocaleString(
+            const date = new Date(l.timestamp).toLocaleString();
+            html += `<tr>
+                <td class="text-dim">${date}</td>
+                <td style="font-weight:600;">${l.username}</td>
+                <td>${l.action}</td>
+            </tr>`;
+        });
+        
+        html += `</tbody></table>`;
+        document.getElementById('logs-table-container').innerHTML = html;
+    },
 
     async lookupPlayer() {
         const q = document.getElementById('p-search').value;
