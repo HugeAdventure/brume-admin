@@ -397,17 +397,17 @@ main::before {
 .page-header { margin-bottom: 36px; }
 
 .page-header h1 {
-    font-size: 32px;
+    font-size: 36px;
     font-weight: 800;
-    letter-spacing: -1px;
-    margin-bottom: 6px;
+    letter-spacing: -1.5px;
+    margin-bottom: 8px;
     line-height: 1.1;
 }
 
 .page-header p {
     font-family: 'Space Mono', monospace;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 0.3px;
 }
 
@@ -441,32 +441,32 @@ main::before {
 }
 
 .stat-card-icon {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     background: var(--accent-glow);
     border: 1px solid rgba(91,106,255,0.2);
     border-radius: 2px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 16px;
-    font-size: 14px;
+    margin-bottom: 20px;
+    font-size: 16px;
 }
 
 .stat-label {
     font-family: 'Space Mono', monospace;
     color: var(--text-secondary);
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 1.5px;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     display: block;
 }
 
 .stat-value {
-    font-size: 28px;
+    font-size: 36px;
     font-weight: 800;
-    letter-spacing: -1px;
+    letter-spacing: -1.5px;
     line-height: 1;
 }
 
@@ -484,12 +484,12 @@ main::before {
 
 .card-title {
     font-family: 'Space Mono', monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 2px;
     color: var(--text-secondary);
     text-transform: uppercase;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     display: flex;
     align-items: center;
     gap: 10px;
