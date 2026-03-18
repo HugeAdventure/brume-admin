@@ -120,6 +120,159 @@ export default async function handler(req, res) {
             return res.json(rows[0] || { error: "Player not found" });
         }
 
+        // ── Player autocomplete ──
+        if (mode === 'player_autocomplete' && ROLES.modOrAbove.includes(user.role)) {
+            const q = req.query.q || '';
+            if (q.length < 1) return res.json([]);
+            const [rows] = await db.execute(
+                `SELECT name, uuid, coins, level, total_playtime_s, last_seen
+                 FROM brume_stats WHERE name LIKE ? ORDER BY last_seen DESC LIMIT 8`,
+                [`${q}%`]
+            );
+            return res.json(rows);
+        }
+
+        // ── Rich player detail — everything about one player ──
+        if (req.method === 'POST' && mode === 'player_detail' && ROLES.modOrAbove.includes(user.role)) {
+            const { query } = req.body;
+            const [rows] = await db.execute(
+                'SELECT * FROM brume_stats WHERE name = ? OR uuid = ?', [query, query]
+            );
+            const player = rows[0];
+            if (!player) return res.status(404).json({ error: "Player not found" });
+
+            const uuid = player.uuid;
+            const name = player.name;
+
+            // Run all queries in parallel
+            const [
+                [snapshots],
+                [sessions],
+                [punishments],
+                [ipHistory],
+                [[coinRank]],
+                [[playtimeRank]],
+                [[levelRank]],
+                [[serverTotals]],
+                [alerts],
+                [recentSessions],
+            ] = await Promise.all([
+                db.execute(
+                    `SELECT coins, level, xp, snapped_at FROM player_snapshots
+                     WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 60`, [uuid]
+                ),
+                db.execute(
+                    `SELECT joined_at, quit_at, duration_s FROM session_log
+                     WHERE uuid = ? ORDER BY joined_at DESC LIMIT 20`, [uuid]
+                ),
+                db.execute(
+                    `SELECT * FROM punishments WHERE target_name = ? ORDER BY issued_at DESC`, [name]
+                ),
+                db.execute(
+                    `SELECT ip, MIN(joined_at) as first_seen, MAX(joined_at) as last_seen, COUNT(*) as times
+                     FROM ip_log WHERE uuid = ? GROUP BY ip ORDER BY last_seen DESC LIMIT 10`, [uuid]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) + 1 as rank FROM brume_stats WHERE coins > ?`, [player.coins]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) + 1 as rank FROM brume_stats WHERE total_playtime_s > ?`, [player.total_playtime_s || 0]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) + 1 as rank FROM brume_stats WHERE level > ? OR (level = ? AND xp > ?)`,
+                    [player.level, player.level, player.xp || 0]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) as total_players, AVG(coins) as avg_coins, AVG(total_playtime_s) as avg_playtime FROM brume_stats`
+                ),
+                db.execute(
+                    `SELECT type, severity, detail, created_at, resolved FROM alerts
+                     WHERE player_name = ? ORDER BY created_at DESC LIMIT 5`, [name]
+                ),
+                db.execute(
+                    `SELECT joined_at, duration_s FROM session_log
+                     WHERE uuid = ? AND duration_s IS NOT NULL
+                     ORDER BY joined_at DESC LIMIT 30`, [uuid]
+                ),
+            ]);
+
+            // ── Calculated stats ──
+            const totalSessions = player.session_count || 0;
+            const totalPlaytimeH = (player.total_playtime_s || 0) / 3600;
+            const coinsPerHour = totalPlaytimeH > 0
+                ? Math.round(player.coins / totalPlaytimeH)
+                : 0;
+
+            const avgSessionS = recentSessions.length > 0
+                ? Math.round(recentSessions.reduce((s, r) => s + (r.duration_s || 0), 0) / recentSessions.length)
+                : 0;
+
+            // Wealth trend — compare current coins to 7 days ago snapshot
+            const weekAgoSnap = snapshots.find(s => {
+                const d = new Date(s.snapped_at);
+                return (Date.now() - d.getTime()) >= 6 * 24 * 3600 * 1000;
+            });
+            const wealthTrend = weekAgoSnap
+                ? Math.round(((player.coins - weekAgoSnap.coins) / Math.max(weekAgoSnap.coins, 1)) * 100)
+                : null;
+
+            // Percentile calculations
+            const totalPlayers = serverTotals.total_players || 1;
+            const coinPercentile = Math.round(((totalPlayers - coinRank.rank + 1) / totalPlayers) * 100);
+            const playtimePercentile = Math.round(((totalPlayers - playtimeRank.rank + 1) / totalPlayers) * 100);
+            const levelPercentile = Math.round(((totalPlayers - levelRank.rank + 1) / totalPlayers) * 100);
+
+            // Days since last seen
+            const lastSeen = player.last_seen ? new Date(player.last_seen) : null;
+            const daysSinceLastSeen = lastSeen
+                ? Math.floor((Date.now() - lastSeen.getTime()) / (1000 * 60 * 60 * 24))
+                : null;
+
+            // Is online right now?
+            const [[onlineCheck]] = await db.execute(
+                `SELECT uuid FROM online_sessions WHERE uuid = ?`, [uuid]
+            );
+            const isOnline = !!onlineCheck;
+
+            // Alt accounts
+            const altMap = {};
+            for (const ipRow of ipHistory) {
+                const [others] = await db.execute(
+                    `SELECT DISTINCT name, uuid FROM ip_log WHERE ip = ? AND uuid != ? LIMIT 5`,
+                    [ipRow.ip, uuid]
+                );
+                if (others.length) altMap[ipRow.ip] = others;
+            }
+
+            return res.json({
+                player: {
+                    ...player,
+                    is_online: isOnline,
+                    days_since_last_seen: daysSinceLastSeen,
+                },
+                stats: {
+                    coins_per_hour: coinsPerHour,
+                    avg_session_s: avgSessionS,
+                    wealth_trend_pct: wealthTrend,
+                    coin_rank: coinRank.rank,
+                    coin_percentile: coinPercentile,
+                    playtime_rank: playtimeRank.rank,
+                    playtime_percentile: playtimePercentile,
+                    level_rank: levelRank.rank,
+                    level_percentile: levelPercentile,
+                    total_players: totalPlayers,
+                    server_avg_coins: Math.round(serverTotals.avg_coins || 0),
+                    server_avg_playtime: Math.round(serverTotals.avg_playtime || 0),
+                },
+                snapshots: snapshots.reverse(), // chronological
+                sessions,
+                punishments,
+                ip_history: ipHistory,
+                alt_accounts: altMap,
+                security_alerts: alerts,
+            });
+        }
+
         // ── Update player ──
         if (req.method === 'POST' && mode === 'update' && user.role === 'admin') {
             const { uuid, name, coins, level } = req.body;
