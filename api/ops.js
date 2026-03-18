@@ -492,6 +492,249 @@ export default async function handler(req, res) {
             return res.json({ success: true });
         }
 
+        // ════ ITEM ARCHITECT ════
+        if (req.method === 'POST' && mode === 'save_item' && ROLES.modOrAbove.includes(user.role)) {
+            const { item } = req.body;
+            if (!item?.id) return res.status(400).json({ error: "Item ID required." });
+
+            await db.execute(
+                `INSERT INTO architect_items (item_id, created_by, data, updated_at)
+                 VALUES (?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE data=VALUES(data), updated_at=NOW(), created_by=VALUES(created_by)`,
+                [item.id, user.username, JSON.stringify(item)]
+            );
+            return res.json({ success: true });
+        }
+
+        if (mode === 'load_items' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT item_id, created_by, data, updated_at FROM architect_items ORDER BY updated_at DESC`
+            );
+            return res.json(rows.map(r => ({ ...JSON.parse(r.data), _meta: { created_by: r.created_by, updated_at: r.updated_at } })));
+        }
+
+        if (req.method === 'POST' && mode === 'delete_item' && user.role === 'admin') {
+            const { item_id } = req.body;
+            await db.execute('DELETE FROM architect_items WHERE item_id = ?', [item_id]);
+            return res.json({ success: true });
+        }
+
+        // ════ ITEM ARCHITECT ════
+        if (mode === 'items_list' && ROLES.modOrAbove.includes(user.role)) {
+            await db.execute(`CREATE TABLE IF NOT EXISTS custom_items (id INT AUTO_INCREMENT PRIMARY KEY, item_id VARCHAR(64) NOT NULL, tier VARCHAR(16), item_type VARCHAR(32), data JSON NOT NULL, created_by VARCHAR(64), updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX idx_item_id (item_id))`);
+            const [rows] = await db.execute(`SELECT id as db_id, item_id as id, tier, item_type, data FROM custom_items ORDER BY updated_at DESC`);
+            return res.json(rows.map(r => ({ ...JSON.parse(r.data), db_id: r.db_id, id: r.id, tier: r.tier, item_type: r.item_type })));
+        }
+
+        if (req.method === 'POST' && mode === 'items_save' && ROLES.modOrAbove.includes(user.role)) {
+            const { db_id, id, tier, item_type, ...rest } = req.body;
+            const dataJson = JSON.stringify({ id, tier, item_type, ...rest });
+            if (db_id) {
+                await db.execute(`UPDATE custom_items SET item_id=?, tier=?, item_type=?, data=?, created_by=? WHERE id=?`, [id, tier, item_type, dataJson, user.username, db_id]);
+                return res.json({ success: true, id: db_id });
+            } else {
+                const [result] = await db.execute(`INSERT INTO custom_items (item_id, tier, item_type, data, created_by) VALUES (?, ?, ?, ?, ?)`, [id, tier, item_type, dataJson, user.username]);
+                return res.json({ success: true, id: result.insertId });
+            }
+        }
+
+        if (req.method === 'POST' && mode === 'items_delete' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            await db.execute(`DELETE FROM custom_items WHERE id=?`, [id]);
+            return res.json({ success: true });
+        }
+
+        // ════ SECURITY & ALERTS ════
+
+        // List unresolved alerts
+        if (mode === 'alerts_list' && ROLES.modOrAbove.includes(user.role)) {
+            const limit = parseInt(req.query.limit) || 50;
+            const showResolved = req.query.resolved === 'true';
+            const [rows] = await db.execute(
+                `SELECT * FROM alerts
+                 WHERE resolved = ?
+                 ORDER BY created_at DESC
+                 LIMIT ?`,
+                [showResolved ? 1 : 0, limit]
+            );
+            const [[{ count }]] = await db.execute(
+                `SELECT COUNT(*) as count FROM alerts WHERE resolved = 0`
+            );
+            return res.json({ alerts: rows, unresolved_count: count });
+        }
+
+        // Resolve an alert
+        if (req.method === 'POST' && mode === 'alert_resolve' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            await db.execute(
+                `UPDATE alerts SET resolved = 1, resolved_by = ?, resolved_at = NOW() WHERE id = ?`,
+                [user.username, id]
+            );
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Resolved alert #${id}`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'alerts_resolve_all' && ROLES.modOrAbove.includes(user.role)) {
+            await db.execute(
+                `UPDATE alerts SET resolved = 1, resolved_by = ?, resolved_at = NOW() WHERE resolved = 0`,
+                [user.username]
+            );
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Resolved all security alerts`]);
+            return res.json({ success: true });
+        }
+
+        if (mode === 'security_analysis' && ROLES.modOrAbove.includes(user.role)) {
+
+            const [velocity] = await db.execute(
+                `SELECT player_name, detail, created_at, resolved
+                 FROM alerts WHERE type = 'VELOCITY'
+                 ORDER BY created_at DESC LIMIT 20`
+            );
+
+            const [deltas] = await db.execute(
+                `SELECT
+                    a.name,
+                    a.uuid,
+                    a.coins AS current_coins,
+                    b.coins AS prev_coins,
+                    (a.coins - b.coins) AS delta,
+                    a.snapped_at
+                 FROM player_snapshots a
+                 JOIN player_snapshots b
+                   ON b.uuid = a.uuid
+                   AND b.id = (
+                     SELECT MAX(id) FROM player_snapshots
+                     WHERE uuid = a.uuid AND id < a.id
+                   )
+                 WHERE ABS(a.coins - b.coins) > 10000
+                 ORDER BY ABS(a.coins - b.coins) DESC
+                 LIMIT 20`
+            );
+
+            const [alts] = await db.execute(
+                `SELECT
+                    ip,
+                    GROUP_CONCAT(DISTINCT name ORDER BY name SEPARATOR ', ') AS names,
+                    COUNT(DISTINCT uuid) AS account_count,
+                    MAX(joined_at) AS last_seen
+                 FROM ip_log
+                 GROUP BY ip
+                 HAVING COUNT(DISTINCT uuid) > 1
+                 ORDER BY account_count DESC, last_seen DESC
+                 LIMIT 20`
+            );
+
+            const [spikes] = await db.execute(
+                `SELECT
+                    curr.snapped_at,
+                    curr.total_coins,
+                    prev.total_coins AS prev_coins,
+                    ROUND(((curr.total_coins - prev.total_coins) / prev.total_coins) * 100, 1) AS pct_change
+                 FROM economy_snapshots curr
+                 JOIN economy_snapshots prev ON prev.id = curr.id - 1
+                 WHERE prev.total_coins > 0
+                   AND ABS((curr.total_coins - prev.total_coins) / prev.total_coins) >= 0.10
+                 ORDER BY curr.snapped_at DESC
+                 LIMIT 20`
+            );
+
+            return res.json({ velocity, deltas, alts, spikes });
+        }
+
+        if (req.method === 'POST' && mode === 'player_ip_history' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [ips] = await db.execute(
+                `SELECT DISTINCT ip, MIN(joined_at) AS first_seen, MAX(joined_at) AS last_seen, COUNT(*) AS times
+                 FROM ip_log WHERE name = ?
+                 GROUP BY ip ORDER BY last_seen DESC`,
+                [name]
+            );
+            const results = await Promise.all(ips.map(async row => {
+                const [others] = await db.execute(
+                    `SELECT DISTINCT name FROM ip_log WHERE ip = ? AND name != ? LIMIT 10`,
+                    [row.ip, name]
+                );
+                return { ...row, shared_with: others.map(r => r.name) };
+            }));
+            return res.json(results);
+        }
+
+
+        if (req.method === 'POST' && mode === 'rollback_timeline' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [[player]] = await db.execute(
+                `SELECT uuid, name, coins, level, xp, total_playtime_s FROM brume_stats WHERE name = ?`, [name]
+            );
+            if (!player) return res.status(404).json({ error: 'Player not found' });
+
+            const [snapshots] = await db.execute(
+                `SELECT id, coins, level, xp, snapped_at FROM player_snapshots
+                 WHERE uuid = ?
+                 ORDER BY snapped_at DESC
+                 LIMIT 50`,
+                [player.uuid]
+            );
+            return res.json({ player, snapshots });
+        }
+
+        if (req.method === 'POST' && mode === 'rollback_execute' && user.role === 'admin') {
+            const { snapshot_id, name } = req.body;
+
+            const [[snap]] = await db.execute(
+                `SELECT ps.*, bs.uuid FROM player_snapshots ps
+                 JOIN brume_stats bs ON bs.uuid = ps.uuid
+                 WHERE ps.id = ? AND bs.name = ?`,
+                [snapshot_id, name]
+            );
+            if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
+
+            await db.execute(
+                `UPDATE brume_stats SET coins = ?, level = ?, xp = ? WHERE uuid = ?`,
+                [snap.coins, snap.level, snap.xp, snap.uuid]
+            );
+
+            try {
+                await rconExec(`economy set ${name} ${snap.coins}`);
+            } catch (e) {
+            }
+
+            const snapDate = new Date(snap.snapped_at).toLocaleString('en-GB');
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Rolled back ${name} to snapshot from ${snapDate} — Coins: ${snap.coins}, Lv: ${snap.level}, XP: ${snap.xp}`]);
+
+            await db.execute(
+                `INSERT INTO player_snapshots (uuid, name, coins, level, xp) VALUES (?, ?, ?, ?, ?)`,
+                [snap.uuid, name, snap.coins, snap.level, snap.xp]
+            );
+
+            return res.json({ success: true, restored: { coins: snap.coins, level: snap.level, xp: snap.xp } });
+        }
+
+        if (req.method === 'POST' && mode === 'test_webhook' && user.role === 'admin') {
+            const { webhook_url } = req.body;
+            if (!webhook_url) return res.status(400).json({ error: 'No webhook URL provided' });
+
+            const payload = {
+                embeds: [{
+                    title: '✅ Brume Security — Webhook Test',
+                    description: 'Your Discord webhook is configured correctly.',
+                    color: 0x5b6aff,
+                    footer: { text: `Tested by ${user.username}` }
+                }]
+            };
+
+            const r = await fetch(webhook_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!r.ok) return res.status(400).json({ error: `Webhook returned ${r.status}` });
+            return res.json({ success: true });
+        }
+
         return res.status(403).json({ error: "Forbidden: No permission." });
 
     } catch (error) {
