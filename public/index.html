@@ -74,6 +74,10 @@
                 <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">Player Database</button>
                 <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('bans')">Bans &amp; Warnings</button>
                 <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('logs')">Audit Logs</button>
+                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('security')">
+                    Security
+                    <span id="alert-badge" style="display:none;float:right;background:var(--red);color:white;font-family:'Space Mono',monospace;font-size:9px;padding:1px 6px;border-radius:2px;font-weight:700;"></span>
+                </button>
             </div>
 
             <div class="nav-section">
@@ -493,6 +497,88 @@
                         <span style="font-family:'Space Mono',monospace;font-size:12px;color:var(--accent);flex-shrink:0;">$</span>
                         <input type="text" id="console-input" placeholder="Enter command..." style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border-mid);border-radius:0;padding:6px 0;font-family:'Space Mono',monospace;font-size:13px;" onkeydown="if(event.key==='Enter')app.runCommand()">
                         <button class="btn-primary" style="width:auto;" onclick="app.runCommand()">RUN</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECURITY -->
+            <div id="view-security" class="view-page">
+                <div class="page-header">
+                    <h1>Security</h1>
+                    <p>Dupe detection, rollback, and alt account analysis</p>
+                </div>
+
+                <!-- Tabs -->
+                <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border-dim);padding-bottom:0;">
+                    <button class="sec-tab active" onclick="app.setSecTab('alerts',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-secondary);cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-1px;">ALERTS</button>
+                    <button class="sec-tab" onclick="app.setSecTab('analysis',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">ANALYSIS</button>
+                    <button class="sec-tab" onclick="app.setSecTab('rollback',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">ROLLBACK</button>
+                    <button class="sec-tab" onclick="app.setSecTab('settings-sec',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">CONFIG</button>
+                </div>
+
+                <!-- ALERTS TAB -->
+                <div id="sec-alerts">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="show-resolved" onchange="app.loadAlerts()"> Show resolved
+                        </label>
+                        <button class="btn-sm" style="margin-left:auto;" onclick="app.resolveAllAlerts()">RESOLVE ALL</button>
+                        <button class="btn-sm" onclick="app.loadAlerts()">↻ REFRESH</button>
+                    </div>
+                    <div id="alerts-container">
+                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:24px 0;">Loading...</p>
+                    </div>
+                </div>
+
+                <!-- ANALYSIS TAB -->
+                <div id="sec-analysis" style="display:none;">
+                    <div style="display:flex;gap:10px;margin-bottom:20px;">
+                        <button class="btn-primary" style="width:auto;" onclick="app.loadAnalysis()">RUN ANALYSIS</button>
+                        <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);align-self:center;">// Scans snapshots, sessions and IP logs</span>
+                    </div>
+                    <div id="analysis-container">
+                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Press Run Analysis to scan for anomalies.</p>
+                    </div>
+                </div>
+
+                <!-- ROLLBACK TAB -->
+                <div id="sec-rollback" style="display:none;">
+                    <div class="card" style="margin-bottom:16px;">
+                        <div class="card-title">Select Player</div>
+                        <div style="display:flex;gap:10px;">
+                            <input type="text" id="rollback-search" placeholder="Player name..." style="flex:1;">
+                            <button class="btn-primary" style="width:auto;" onclick="app.loadRollbackTimeline()">LOAD TIMELINE</button>
+                        </div>
+                    </div>
+                    <div id="rollback-container"></div>
+                </div>
+
+                <!-- CONFIG TAB -->
+                <div id="sec-settings-sec" style="display:none;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div class="card">
+                            <div class="card-title">Discord Webhook</div>
+                            <div class="input-group">
+                                <label>Webhook URL</label>
+                                <input type="text" id="webhook-url" placeholder="https://discord.com/api/webhooks/...">
+                            </div>
+                            <div style="display:flex;gap:8px;margin-top:12px;">
+                                <button class="btn-primary" style="width:auto;" onclick="app.saveWebhook()">SAVE</button>
+                                <button class="btn-sm" onclick="app.testWebhook()">TEST</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Detection Thresholds</div>
+                            <div class="input-group">
+                                <label>Velocity Alert (coins per session)</label>
+                                <input type="number" id="threshold-velocity" value="100000" placeholder="100000">
+                            </div>
+                            <div class="input-group">
+                                <label>Snapshot Delta Alert (coins)</label>
+                                <input type="number" id="threshold-delta" value="50000" placeholder="50000">
+                            </div>
+                            <p style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.7;">// These values are used by the Skript file.<br>// Update brume_security.sk to match after saving.</p>
+                        </div>
                     </div>
                 </div>
             </div>
