@@ -138,22 +138,28 @@ const app = {
 
     async loadStats() {
         const res = await this.req('stats');
-        if (res.error) return this.toast("Stats: " + res.error, "error");
-
-        document.getElementById('stat-users').innerText = res.user_count || 0;
-        document.getElementById('stat-eco').innerText = Number(res.total_economy || 0).toLocaleString() + " ◎";
-        document.getElementById('stat-rich').innerText = res.top_player || "None";
+        if (!res || res.error) return;
+        const u = document.getElementById('stat-users');
+        const e = document.getElementById('stat-eco');
+        const r = document.getElementById('stat-rich');
+        if (u) u.innerText = Number(res.user_count || 0).toLocaleString();
+        if (e) e.innerText = Number(res.total_economy || 0).toLocaleString() + ' ◎';
+        if (r) r.innerText = res.top_player || 'None';
     },
 
     async loadOverviewLogs() {
-        const res = await this.req('logs');
         const container = document.getElementById('overview-logs-container');
-        if (res.error || !res.length) {
+        if (!container) return;
+        const res = await this.req('logs');
+        // Handle error or non-array response
+        if (!res || res.error || !Array.isArray(res)) {
             container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:4px 0;">No recent activity.</p>`;
             return;
         }
-
-        // Show 5 most recent entries as a compact list
+        if (!res.length) {
+            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:4px 0;">No recent activity yet.</p>`;
+            return;
+        }
         const recent = res.slice(0, 5);
         container.innerHTML = recent.map(l => {
             const date = new Date(l.timestamp).toLocaleString('en-GB', { hour12: false });
