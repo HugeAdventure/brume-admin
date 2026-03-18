@@ -266,7 +266,8 @@ export default async function handler(req, res) {
                 `SELECT
                     DATE_FORMAT(snapped_at, '%Y-%m-%d %H:00') as hour,
                     GREATEST(total_coins, 0) as total_coins,
-                    total_players,
+                    total_players as registered_players,
+                    online_count,
                     GREATEST(avg_coins, 0) as avg_coins,
                     GREATEST(max_coins, 0) as max_coins
                  FROM economy_snapshots
@@ -275,7 +276,7 @@ export default async function handler(req, res) {
                 [days]
             );
             const [[peak]] = await db.execute(
-                `SELECT GREATEST(MAX(total_coins), 0) as peak_coins, MAX(total_players) as peak_players FROM economy_snapshots`
+                `SELECT GREATEST(MAX(total_coins), 0) as peak_coins, MAX(total_players) as peak_players, MAX(online_count) as peak_online FROM economy_snapshots`
             );
             return res.json({ snapshots: rows, peak });
         }
@@ -575,6 +576,7 @@ export default async function handler(req, res) {
             return res.json({ success: true });
         }
 
+        // Resolve all alerts
         if (req.method === 'POST' && mode === 'alerts_resolve_all' && ROLES.modOrAbove.includes(user.role)) {
             await db.execute(
                 `UPDATE alerts SET resolved = 1, resolved_by = ?, resolved_at = NOW() WHERE resolved = 0`,
@@ -585,14 +587,17 @@ export default async function handler(req, res) {
             return res.json({ success: true });
         }
 
+        // Security analysis — runs all three detection queries on demand
         if (mode === 'security_analysis' && ROLES.modOrAbove.includes(user.role)) {
 
+            // 1. Velocity — players who gained a lot in a single session (from alerts)
             const [velocity] = await db.execute(
                 `SELECT player_name, detail, created_at, resolved
                  FROM alerts WHERE type = 'VELOCITY'
                  ORDER BY created_at DESC LIMIT 20`
             );
 
+            // 2. Snapshot delta — biggest single-snapshot coin jumps per player
             const [deltas] = await db.execute(
                 `SELECT
                     a.name,
@@ -613,6 +618,7 @@ export default async function handler(req, res) {
                  LIMIT 20`
             );
 
+            // 3. Alt accounts — UUIDs sharing an IP
             const [alts] = await db.execute(
                 `SELECT
                     ip,
@@ -626,6 +632,7 @@ export default async function handler(req, res) {
                  LIMIT 20`
             );
 
+            // 4. Economy spikes from snapshots
             const [spikes] = await db.execute(
                 `SELECT
                     curr.snapped_at,
@@ -643,6 +650,7 @@ export default async function handler(req, res) {
             return res.json({ velocity, deltas, alts, spikes });
         }
 
+        // Player IP history
         if (req.method === 'POST' && mode === 'player_ip_history' && ROLES.modOrAbove.includes(user.role)) {
             const { name } = req.body;
             const [ips] = await db.execute(
@@ -651,6 +659,7 @@ export default async function handler(req, res) {
                  GROUP BY ip ORDER BY last_seen DESC`,
                 [name]
             );
+            // For each IP, find other players who used it
             const results = await Promise.all(ips.map(async row => {
                 const [others] = await db.execute(
                     `SELECT DISTINCT name FROM ip_log WHERE ip = ? AND name != ? LIMIT 10`,
@@ -661,7 +670,9 @@ export default async function handler(req, res) {
             return res.json(results);
         }
 
+        // ════ ROLLBACK ════
 
+        // Get rollback timeline for a player
         if (req.method === 'POST' && mode === 'rollback_timeline' && ROLES.modOrAbove.includes(user.role)) {
             const { name } = req.body;
             const [[player]] = await db.execute(
@@ -679,6 +690,7 @@ export default async function handler(req, res) {
             return res.json({ player, snapshots });
         }
 
+        // Execute rollback
         if (req.method === 'POST' && mode === 'rollback_execute' && user.role === 'admin') {
             const { snapshot_id, name } = req.body;
 
@@ -690,20 +702,24 @@ export default async function handler(req, res) {
             );
             if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
 
+            // Restore full stats row
             await db.execute(
                 `UPDATE brume_stats SET coins = ?, level = ?, xp = ? WHERE uuid = ?`,
                 [snap.coins, snap.level, snap.xp, snap.uuid]
             );
 
+            // Fire RCON to update in-game if player is online
             try {
                 await rconExec(`economy set ${name} ${snap.coins}`);
             } catch (e) {
+                // Non-fatal if RCON fails or player is offline
             }
 
             const snapDate = new Date(snap.snapped_at).toLocaleString('en-GB');
             await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
                 [user.username, `Rolled back ${name} to snapshot from ${snapDate} — Coins: ${snap.coins}, Lv: ${snap.level}, XP: ${snap.xp}`]);
 
+            // Create a "post-rollback" snapshot so the timeline reflects the change
             await db.execute(
                 `INSERT INTO player_snapshots (uuid, name, coins, level, xp) VALUES (?, ?, ?, ?, ?)`,
                 [snap.uuid, name, snap.coins, snap.level, snap.xp]
@@ -712,6 +728,7 @@ export default async function handler(req, res) {
             return res.json({ success: true, restored: { coins: snap.coins, level: snap.level, xp: snap.xp } });
         }
 
+        // Discord webhook test
         if (req.method === 'POST' && mode === 'test_webhook' && user.role === 'admin') {
             const { webhook_url } = req.body;
             if (!webhook_url) return res.status(400).json({ error: 'No webhook URL provided' });
