@@ -173,16 +173,17 @@ const app = {
 
     async savePlayer() {
         const body = {
-            uuid: document.getElementById('val-uuid').innerText,
+            uuid: document.getElementById('val-uuid').value || document.getElementById('val-uuid').innerText,
             name: document.getElementById('val-name').innerText,
             coins: document.getElementById('inp-coins').value,
             level: document.getElementById('inp-level').value
         };
         const res = await this.req('update', 'POST', body);
-
         if (res.error) this.toast(res.error, "error");
         else {
             this.toast("Player record updated.");
+            document.getElementById('player-edit-panel').style.display = 'none';
+            this.loadPlayerDetail(); // refresh the whole profile
             this.loadLogs();
             this.loadStats();
         }
@@ -236,16 +237,346 @@ const app = {
         container.innerHTML = html;
     },
 
-    async lookupPlayer() {
-        const q = document.getElementById('p-search').value;
+    // ════ PLAYER DATABASE ════
+    _playerData: null,
+    _autocompleteTimer: null,
+    _autocompleteIndex: -1,
+    _playerChart: null,
+
+    async playerSearchInput(val) {
+        clearTimeout(this._autocompleteTimer);
+        const box = document.getElementById('p-autocomplete');
+        if (!val || val.length < 1) { box.style.display = 'none'; return; }
+        this._autocompleteTimer = setTimeout(async () => {
+            const res = await this.req(`player_autocomplete&q=${encodeURIComponent(val)}`);
+            if (!res || res.error || !res.length) { box.style.display = 'none'; return; }
+            this._autocompleteIndex = -1;
+            box.style.display = 'block';
+            box.innerHTML = res.map((p, i) => {
+                const playtime = this.fmtDuration(p.total_playtime_s);
+                const lastSeen = p.last_seen ? new Date(p.last_seen).toLocaleDateString('en-GB') : 'Never';
+                return `<div class="autocomplete-item" data-index="${i}" data-name="${p.name}"
+                    onmousedown="app.selectAutocomplete('${p.name}')"
+                    style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;transition:background 0.1s;border-bottom:1px solid var(--border-dim);">
+                    <img src="https://crafatar.com/avatars/${p.uuid}?size=32&overlay" style="width:28px;height:28px;image-rendering:pixelated;border-radius:2px;" onerror="this.style.display='none'">
+                    <div style="flex:1;">
+                        <div style="font-weight:700;font-size:13px;">${p.name}</div>
+                        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">Lv.${p.level} · ${this.fmtCoins(p.coins)} ◎ · ${playtime}</div>
+                    </div>
+                    <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">${lastSeen}</span>
+                </div>`;
+            }).join('');
+        }, 150);
+    },
+
+    playerSearchKeydown(e) {
+        const box = document.getElementById('p-autocomplete');
+        const items = box.querySelectorAll('.autocomplete-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this._autocompleteIndex = Math.min(this._autocompleteIndex + 1, items.length - 1);
+            items.forEach((el, i) => el.style.background = i === this._autocompleteIndex ? 'var(--bg-hover)' : '');
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            this._autocompleteIndex = Math.max(this._autocompleteIndex - 1, 0);
+            items.forEach((el, i) => el.style.background = i === this._autocompleteIndex ? 'var(--bg-hover)' : '');
+        } else if (e.key === 'Enter') {
+            if (this._autocompleteIndex >= 0 && items[this._autocompleteIndex]) {
+                this.selectAutocomplete(items[this._autocompleteIndex].dataset.name);
+            } else {
+                this.loadPlayerDetail();
+            }
+        } else if (e.key === 'Escape') {
+            box.style.display = 'none';
+        }
+    },
+
+    selectAutocomplete(name) {
+        document.getElementById('p-search').value = name;
+        document.getElementById('p-autocomplete').style.display = 'none';
+        this.loadPlayerDetail();
+    },
+
+    async loadPlayerDetail() {
+        const q = document.getElementById('p-search').value.trim();
         if (!q) return;
+        document.getElementById('p-autocomplete').style.display = 'none';
 
+        // Show loading state
+        const profile = document.getElementById('player-profile');
+        profile.style.display = 'block';
+        document.getElementById('player-name-hero').innerText = 'Loading...';
+        document.getElementById('player-stat-grid').innerHTML = '';
+
+        const res = await this.req('player_detail', 'POST', { query: q });
+        if (res.error) {
+            this.toast(res.error, 'error');
+            profile.style.display = 'none';
+            return;
+        }
+
+        this._playerData = res;
+        this.renderPlayerDetail(res);
+    },
+
+    renderPlayerDetail(data) {
+        const { player, stats, snapshots, sessions, punishments, ip_history, alt_accounts, security_alerts } = data;
+        const fmtC = this.fmtCoins.bind(this);
+        const fmtD = this.fmtDuration.bind(this);
+
+        // ── HERO ──
+        const uuid = player.uuid;
+        document.getElementById('player-face').src = `https://crafatar.com/avatars/${uuid}?size=72&overlay`;
+        document.getElementById('player-skin-full').src = `https://crafatar.com/renders/body/${uuid}?scale=6&overlay`;
+        document.getElementById('player-name-hero').innerText = player.name;
+        document.getElementById('player-uuid-hero').innerText = uuid;
+
+        // Online/ban badges
+        const onlineDot = document.getElementById('player-online-dot');
+        const onlineBadge = document.getElementById('player-online-badge');
+        const banBadge = document.getElementById('player-ban-badge');
+        onlineDot.style.display = player.is_online ? 'block' : 'none';
+        onlineBadge.style.display = player.is_online ? 'inline-block' : 'none';
+
+        const activeBan = punishments.find(p => (p.type === 'ban' || p.type === 'tempban') && p.active);
+        banBadge.style.display = activeBan ? 'inline-block' : 'none';
+
+        // First/last seen
+        const firstSeen = player.first_seen ? new Date(player.first_seen).toLocaleDateString('en-GB') : 'Unknown';
+        const lastSeen = player.last_seen ? new Date(player.last_seen).toLocaleString('en-GB', { hour12: false }) : 'Never';
+        document.getElementById('player-first-seen').innerText = `First seen: ${firstSeen}`;
+        document.getElementById('player-last-seen').innerText = `Last seen: ${lastSeen}`;
+        const daysAgoEl = document.getElementById('player-days-ago');
+        if (player.days_since_last_seen !== null) {
+            const d = player.days_since_last_seen;
+            const col = player.is_online ? 'var(--green)' : d === 0 ? 'var(--green)' : d <= 3 ? 'var(--amber)' : 'var(--text-dim)';
+            daysAgoEl.innerText = player.is_online ? '● Online now' : d === 0 ? 'Seen today' : `${d} day${d !== 1 ? 's' : ''} ago`;
+            daysAgoEl.style.color = col;
+        }
+
+        // Rank badges
+        const rankBadges = document.getElementById('player-rank-badges');
+        const badges = [];
+        if (stats.coin_percentile >= 90) badges.push({ label: `Top ${100 - stats.coin_percentile + 1}% Wealth`, col: 'var(--amber)', bg: 'var(--amber-dim)' });
+        if (stats.playtime_percentile >= 90) badges.push({ label: `Top ${100 - stats.playtime_percentile + 1}% Playtime`, col: 'var(--green)', bg: 'var(--green-dim)' });
+        if (stats.level_percentile >= 90) badges.push({ label: `Top ${100 - stats.level_percentile + 1}% Level`, col: 'var(--purple)', bg: 'var(--purple-dim)' });
+        if (Object.keys(alt_accounts).length > 0) badges.push({ label: '⚠ Possible Alts', col: 'var(--red)', bg: 'var(--red-dim)' });
+        if (security_alerts.filter(a => !a.resolved).length > 0) badges.push({ label: '🚨 Security Flags', col: 'var(--red)', bg: 'var(--red-dim)' });
+        rankBadges.innerHTML = badges.map(b =>
+            `<span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1px;background:${b.bg};color:${b.col};border:1px solid ${b.col};padding:3px 8px;border-radius:2px;">${b.label}</span>`
+        ).join('');
+
+        // ── STAT GRID ──
+        const statItems = [
+            { label: 'Coins', value: `${fmtC(player.coins)} ◎`, color: 'var(--amber)', icon: '◎' },
+            { label: 'Level', value: player.level || 1, color: 'var(--purple)', icon: '◆' },
+            { label: 'XP', value: Number(player.xp || 0).toLocaleString(), color: 'var(--accent-bright)', icon: '✦' },
+            { label: 'Playtime', value: fmtD(player.total_playtime_s), color: 'var(--green)', icon: '⧗' },
+            { label: 'Sessions', value: Number(player.session_count || 0).toLocaleString(), color: 'var(--text-primary)', icon: '◈' },
+            { label: 'Coins/Hour', value: `${fmtC(stats.coins_per_hour)} ◎`, color: 'var(--amber)', icon: '⚡' },
+            { label: 'Avg Session', value: fmtD(stats.avg_session_s), color: 'var(--text-primary)', icon: '⊙' },
+            { label: 'Punishments', value: punishments.length, color: punishments.length > 0 ? 'var(--red)' : 'var(--green)', icon: '⊘' },
+        ];
+        document.getElementById('player-stat-grid').innerHTML = statItems.map(s =>
+            `<div style="background:var(--bg-panel);border:1px solid var(--border-dim);border-radius:4px;padding:16px;position:relative;overflow:hidden;">
+                <div style="position:absolute;top:12px;right:14px;font-size:20px;color:${s.color};opacity:0.15;">${s.icon}</div>
+                <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">${s.label}</span>
+                <div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:${s.color};">${s.value}</div>
+            </div>`
+        ).join('');
+
+        // ── WEALTH ANALYSIS ──
+        const wealthEl = document.getElementById('player-wealth-analysis');
+        const vsAvg = player.coins - stats.server_avg_coins;
+        const vsAvgPct = stats.server_avg_coins > 0 ? Math.round((vsAvg / stats.server_avg_coins) * 100) : 0;
+        wealthEl.innerHTML = [
+            { label: 'vs Server Avg', value: `${vsAvg >= 0 ? '+' : ''}${fmtC(vsAvg)} ◎`, color: vsAvg >= 0 ? 'var(--green)' : 'var(--red)' },
+            { label: 'vs Avg (%)', value: `${vsAvgPct >= 0 ? '+' : ''}${vsAvgPct}%`, color: vsAvgPct >= 0 ? 'var(--green)' : 'var(--red)' },
+            { label: 'Server Avg Coins', value: `${fmtC(stats.server_avg_coins)} ◎`, color: 'var(--text-secondary)' },
+            { label: '7-Day Trend', value: stats.wealth_trend_pct !== null ? `${stats.wealth_trend_pct >= 0 ? '+' : ''}${stats.wealth_trend_pct}%` : 'No data', color: stats.wealth_trend_pct > 0 ? 'var(--green)' : stats.wealth_trend_pct < 0 ? 'var(--red)' : 'var(--text-dim)' },
+        ].map(r => `<div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${r.label}</span>
+            <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:${r.color};">${r.value}</span>
+        </div>`).join('');
+
+        // Set trend in chart header
+        if (stats.wealth_trend_pct !== null) {
+            const t = stats.wealth_trend_pct;
+            document.getElementById('player-wealth-trend').innerText = `7d: ${t >= 0 ? '+' : ''}${t}%`;
+            document.getElementById('player-wealth-trend').style.color = t > 0 ? 'var(--green)' : t < 0 ? 'var(--red)' : 'var(--text-dim)';
+        }
+
+        // ── SERVER RANK ──
+        const ranksEl = document.getElementById('player-ranks');
+        const mkRank = (label, rank, total, pct) => {
+            const barW = Math.max(2, pct);
+            return `<div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${label}</span>
+                    <span style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-primary);">#${rank} <span style="color:var(--text-dim);">/ ${total}</span></span>
+                </div>
+                <div style="height:3px;background:var(--border-dim);border-radius:2px;overflow:hidden;">
+                    <div style="height:100%;width:${barW}%;background:var(--accent);border-radius:2px;transition:width 0.6s ease;"></div>
+                </div>
+            </div>`;
+        };
+        const tot = stats.total_players;
+        ranksEl.innerHTML =
+            mkRank('Coins', stats.coin_rank, tot, stats.coin_percentile) +
+            mkRank('Level', stats.level_rank, tot, stats.level_percentile) +
+            mkRank('Playtime', stats.playtime_rank, tot, stats.playtime_percentile);
+
+        // ── ACTIVITY ──
+        const actEl = document.getElementById('player-activity');
+        const vsAvgPlay = (player.total_playtime_s || 0) - stats.server_avg_playtime;
+        actEl.innerHTML = [
+            { label: 'Total Playtime', value: fmtD(player.total_playtime_s), color: 'var(--green)' },
+            { label: 'vs Server Avg', value: `${vsAvgPlay >= 0 ? '+' : ''}${fmtD(Math.abs(vsAvgPlay))}`, color: vsAvgPlay >= 0 ? 'var(--green)' : 'var(--red)' },
+            { label: 'Avg Session', value: fmtD(stats.avg_session_s), color: 'var(--text-primary)' },
+            { label: 'Total Sessions', value: Number(player.session_count || 0).toLocaleString(), color: 'var(--text-primary)' },
+        ].map(r => `<div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${r.label}</span>
+            <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:${r.color};">${r.value}</span>
+        </div>`).join('');
+
+        // ── COIN HISTORY CHART ──
+        if (this._playerChart) { this._playerChart.destroy(); this._playerChart = null; }
+        if (snapshots.length > 1) {
+            const ctx = document.getElementById('player-coin-chart').getContext('2d');
+            const grad = ctx.createLinearGradient(0, 0, 0, 160);
+            grad.addColorStop(0, 'rgba(255,184,48,0.3)');
+            grad.addColorStop(1, 'rgba(255,184,48,0)');
+            this._playerChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: snapshots.map(s => new Date(s.snapped_at).toLocaleDateString('en-GB')),
+                    datasets: [{
+                        data: snapshots.map(s => s.coins),
+                        borderColor: '#ffb830',
+                        backgroundColor: grad,
+                        borderWidth: 2,
+                        pointRadius: snapshots.length > 30 ? 0 : 3,
+                        pointBackgroundColor: '#ffb830',
+                        fill: true,
+                        tension: 0.3,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: {
+                        backgroundColor: '#16161f', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1,
+                        titleColor: '#eeeef5', bodyColor: '#8888aa', padding: 10,
+                        titleFont: { family: 'Space Mono', size: 11 }, bodyFont: { family: 'Space Mono', size: 11 },
+                        callbacks: { label: ctx => ` ${Number(ctx.raw).toLocaleString()} ◎` }
+                    }},
+                    scales: {
+                        x: { display: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 } },
+                        y: { display: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 10 }, callback: v => fmtC(v) } }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('player-coin-chart').parentElement.innerHTML =
+                `<div style="height:160px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// Not enough snapshot data yet — accumulates over time.</div>`;
+        }
+
+        // ── SESSIONS ──
+        const sessEl = document.getElementById('player-sessions-list');
+        if (!sessions.length) {
+            sessEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// No sessions logged yet.</p>`;
+        } else {
+            sessEl.innerHTML = sessions.map(s => {
+                const date = new Date(s.joined_at).toLocaleString('en-GB', { hour12: false });
+                const dur = s.duration_s ? fmtD(s.duration_s) : 'In progress';
+                const durColor = s.duration_s ? (s.duration_s > 3600 ? 'var(--green)' : 'var(--text-secondary)') : 'var(--amber)';
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border-dim);">
+                    <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${date}</span>
+                    <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:${durColor};">${dur}</span>
+                </div>`;
+            }).join('');
+        }
+
+        // ── PUNISHMENTS ──
+        const punEl = document.getElementById('player-punishments-list');
+        if (!punishments.length) {
+            punEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--green);">// Clean record.</p>`;
+        } else {
+            const typeCol = { ban: 'var(--red)', tempban: 'var(--purple)', warn: 'var(--amber)' };
+            punEl.innerHTML = punishments.map(p => {
+                const date = new Date(p.issued_at).toLocaleDateString('en-GB');
+                const col = typeCol[p.type] || 'var(--text-dim)';
+                return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim);">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1px;color:${col};text-transform:uppercase;">${p.type}</span>
+                        ${!p.active ? '<span style="font-family:\'Space Mono\',monospace;font-size:9px;color:var(--text-dim);">REVOKED</span>' : ''}
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);margin-left:auto;">${date}</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);">${p.reason}</div>
+                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:2px;">by ${p.issued_by}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // ── IP HISTORY ──
+        const ipEl = document.getElementById('player-ip-list');
+        if (!ip_history.length) {
+            ipEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// No IP logs yet.</p>`;
+        } else {
+            ipEl.innerHTML = ip_history.map(ip => {
+                const masked = ip.ip.replace(/(\d+\.\d+)\.\d+\.\d+/, '$1.*.*');
+                const alts = alt_accounts[ip.ip] || [];
+                const lastSeen = new Date(ip.last_seen).toLocaleDateString('en-GB');
+                return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;">${masked}</span>
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">${ip.times}× · ${lastSeen}</span>
+                    </div>
+                    ${alts.length ? `<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--red);">⚠ Shared with: ${alts.map(a => `<span class="player-link" onclick="app.selectAutocomplete('${a.name}')">${a.name}</span>`).join(', ')}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        // ── SECURITY ALERTS ──
+        const secEl = document.getElementById('player-security-list');
+        if (!security_alerts.length) {
+            secEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--green);">// No security flags.</p>`;
+        } else {
+            const sevCol = { critical: 'var(--red)', high: 'var(--red)', medium: 'var(--amber)', low: 'var(--text-dim)' };
+            secEl.innerHTML = security_alerts.map(a => {
+                const date = new Date(a.created_at).toLocaleDateString('en-GB');
+                const col = sevCol[a.severity] || 'var(--text-dim)';
+                return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim);">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;color:${col};letter-spacing:1px;">${a.type}</span>
+                        ${a.resolved ? '<span style="font-family:\'Space Mono\',monospace;font-size:9px;color:var(--green);">RESOLVED</span>' : ''}
+                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);margin-left:auto;">${date}</span>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-secondary);font-family:'Space Mono',monospace;line-height:1.5;">${a.detail}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // ── POPULATE EDIT FORM ──
+        document.getElementById('val-uuid').value = player.uuid;
+        document.getElementById('val-name').innerText = player.name;
+        document.getElementById('inp-coins').value = player.coins || 0;
+        document.getElementById('inp-level').value = player.level || 1;
+    },
+
+    showPlayerEdit() {
+        const panel = document.getElementById('player-edit-panel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    },
+
+    // Keep lookupPlayer for backward compat (used by modal)
+    async lookupPlayer() {
+        const q = document.getElementById('p-search').value.trim();
+        if (!q) return;
         const res = await this.req('lookup', 'POST', { query: q });
-        if (res.error) return this.toast(res.error, "error");
-
-        document.getElementById('p-editor').style.display = 'block';
+        if (res.error) return this.toast(res.error, 'error');
         document.getElementById('val-name').innerText = res.name;
-        document.getElementById('val-uuid').innerText = res.uuid;
+        document.getElementById('val-uuid').value = res.uuid;
         document.getElementById('inp-coins').value = res.coins;
         document.getElementById('inp-level').value = res.level;
     },
