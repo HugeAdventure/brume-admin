@@ -165,40 +165,106 @@
             </div>
 
             <!-- PLAYER MANAGER -->
+            <!-- PLAYER DATABASE -->
             <div id="view-player" class="view-page">
                 <div class="page-header">
                     <h1>Player Database</h1>
                     <p>Search, inspect and modify player records</p>
                 </div>
-                <div class="card">
+
+                <!-- Search with autocomplete -->
+                <div class="card" style="margin-bottom:20px;position:relative;">
                     <div class="card-title">Search</div>
-                    <div class="search-bar">
-                        <input type="text" id="p-search" placeholder="Username or UUID...">
-                        <button class="btn-primary" onclick="app.lookupPlayer()">QUERY DATABASE</button>
+                    <div style="display:flex;gap:10px;position:relative;">
+                        <div style="flex:1;position:relative;">
+                            <input type="text" id="p-search" placeholder="Username or UUID..." autocomplete="off"
+                                oninput="app.playerSearchInput(this.value)"
+                                onkeydown="app.playerSearchKeydown(event)">
+                            <div id="p-autocomplete" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-raised);border:1px solid var(--border-mid);border-top:none;border-radius:0 0 4px 4px;z-index:100;overflow:hidden;"></div>
+                        </div>
+                        <button class="btn-primary" style="width:auto;" onclick="app.loadPlayerDetail()">SEARCH</button>
                     </div>
                 </div>
 
-                <div id="p-editor" class="card" style="display:none; margin-top:16px;">
-                    <div class="profile-header">
-                        <div>
-                            <h2 id="val-name">PlayerName</h2>
-                            <div class="uuid-tag" id="val-uuid"></div>
+                <!-- Player profile — hidden until search -->
+                <div id="player-profile" style="display:none;">
+
+                    <!-- HERO SECTION -->
+                    <div id="player-hero" style="position:relative;background:var(--bg-panel);border:1px solid var(--border-dim);border-radius:4px;overflow:hidden;margin-bottom:16px;min-height:200px;">
+                        <div id="player-hero-bg" style="position:absolute;right:0;top:0;bottom:0;width:320px;background:linear-gradient(to left,rgba(91,106,255,0.08),transparent);display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                            <img id="player-skin-full" src="" alt="" style="height:180px;image-rendering:pixelated;opacity:0.9;filter:drop-shadow(0 0 32px rgba(91,106,255,0.5));" onerror="this.style.display='none'">
+                        </div>
+                        <div style="position:relative;z-index:1;padding:28px 32px;display:flex;align-items:flex-start;gap:20px;">
+                            <div style="position:relative;flex-shrink:0;">
+                                <img id="player-face" src="" alt="" style="width:72px;height:72px;image-rendering:pixelated;border-radius:4px;border:2px solid var(--border-mid);background:var(--bg-raised);" onerror="this.style.display='none'">
+                                <div id="player-online-dot" style="display:none;position:absolute;bottom:-4px;right:-4px;width:16px;height:16px;background:var(--green);border-radius:50%;border:2px solid var(--bg-panel);box-shadow:0 0 8px var(--green);animation:pulse-dot 2s infinite;"></div>
+                            </div>
+                            <div style="flex:1;">
+                                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <h2 id="player-name-hero" style="font-size:28px;font-weight:800;letter-spacing:-1px;"></h2>
+                                    <span id="player-online-badge" style="display:none;font-family:'Space Mono',monospace;font-size:9px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,229,160,0.3);padding:2px 8px;border-radius:2px;letter-spacing:1px;">● ONLINE</span>
+                                    <span id="player-ban-badge" style="display:none;font-family:'Space Mono',monospace;font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.3);padding:2px 8px;border-radius:2px;letter-spacing:1px;">⊘ BANNED</span>
+                                </div>
+                                <div id="player-uuid-hero" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:14px;"></div>
+                                <div id="player-rank-badges" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:8px;flex-shrink:0;">
+                                <button class="btn-sm" onclick="app.showPlayerEdit()">EDIT STATS</button>
+                                <button class="btn-sm btn-red" onclick="app.quickBan(document.getElementById('p-search').value)">BAN</button>
+                                <button class="btn-sm" onclick="app.quickRollback(document.getElementById('p-search').value)">ROLLBACK</button>
+                            </div>
+                        </div>
+                        <div style="position:relative;z-index:1;padding:0 32px 20px;display:flex;gap:24px;flex-wrap:wrap;">
+                            <span id="player-first-seen" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
+                            <span id="player-last-seen" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
+                            <span id="player-days-ago" style="font-family:'Space Mono',monospace;font-size:10px;"></span>
                         </div>
                     </div>
-                    <div class="card-title">Edit Record</div>
-                    <div class="form-grid">
-                        <div class="input-group">
-                            <label>Coin Balance</label>
-                            <input type="number" id="inp-coins">
-                        </div>
-                        <div class="input-group">
-                            <label>Player Level</label>
-                            <input type="number" id="inp-level">
-                        </div>
+
+                    <!-- STAT GRID -->
+                    <div id="player-stat-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
+
+                    <!-- CALCULATED + RANK ROW -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+                        <div class="card"><div class="card-title">Wealth Analysis</div><div style="display:flex;flex-direction:column;gap:10px;" id="player-wealth-analysis"></div></div>
+                        <div class="card"><div class="card-title">Server Rank</div><div id="player-ranks" style="display:flex;flex-direction:column;gap:10px;"></div></div>
+                        <div class="card"><div class="card-title">Activity</div><div id="player-activity" style="display:flex;flex-direction:column;gap:10px;"></div></div>
                     </div>
-                    <div class="form-actions">
-                        <button class="btn-primary" onclick="app.savePlayer()">SAVE CHANGES</button>
-                        <span class="note">// Admin privileges required</span>
+
+                    <!-- COIN HISTORY CHART -->
+                    <div class="card" style="margin-bottom:16px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                            <div class="card-title" style="margin-bottom:0;">Coin History</div>
+                            <span id="player-wealth-trend" style="font-family:'Space Mono',monospace;font-size:11px;"></span>
+                        </div>
+                        <div style="position:relative;height:160px;"><canvas id="player-coin-chart"></canvas></div>
+                    </div>
+
+                    <!-- SESSIONS + PUNISHMENTS -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Recent Sessions</div></div><div id="player-sessions-list" style="padding:0 20px 16px;"></div></div>
+                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Punishment Record</div></div><div id="player-punishments-list" style="padding:0 20px 16px;"></div></div>
+                    </div>
+
+                    <!-- IP + SECURITY -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">IP History</div></div><div id="player-ip-list" style="padding:0 20px 16px;"></div></div>
+                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Security Alerts</div></div><div id="player-security-list" style="padding:0 20px 16px;"></div></div>
+                    </div>
+
+                    <!-- INLINE EDIT -->
+                    <div id="player-edit-panel" style="display:none;" class="card">
+                        <div class="card-title">Edit Record <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--red);margin-left:8px;">// Admin only</span></div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                            <div class="input-group"><label>Coin Balance</label><input type="number" id="inp-coins"></div>
+                            <div class="input-group"><label>Player Level</label><input type="number" id="inp-level"></div>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn-primary" style="width:auto;" onclick="app.savePlayer()">SAVE CHANGES</button>
+                            <button class="btn-sm" onclick="document.getElementById('player-edit-panel').style.display='none'">CANCEL</button>
+                        </div>
+                        <input type="hidden" id="val-uuid">
+                        <span id="val-name" style="display:none;"></span>
                     </div>
                 </div>
             </div>
