@@ -82,7 +82,7 @@ const app = {
             this.loadStats();
             this.loadLogs();
             this.loadOverviewLogs();
-            // Load overview analytics summary (mini chart + week stats)
+            this.startAlertPolling();
             this.req(`analytics_economy&days=7`).then(r => { if (!r.error) { this.renderOverviewEcoChart(r); } });
             this.req('analytics_retention').then(r => { if (!r.error) this.renderOverviewWeekStats(r); });
         }
@@ -1241,6 +1241,309 @@ const app = {
 
     closeConfirm() {
         if (this._confirmResolve) this._confirmResolve(false);
+    },
+
+    // ════ SECURITY ════
+    _secTab: 'alerts',
+
+    setSecTab(tab, btn) {
+        this._secTab = tab;
+        ['alerts','analysis','rollback','settings-sec'].forEach(t => {
+            const el = document.getElementById(`sec-${t}`);
+            if (el) el.style.display = t === tab ? 'block' : 'none';
+        });
+        document.querySelectorAll('.sec-tab').forEach(b => {
+            b.style.color = b === btn ? 'var(--text-primary)' : 'var(--text-dim)';
+            b.style.borderBottomColor = b === btn ? 'var(--accent)' : 'transparent';
+        });
+        if (tab === 'alerts') this.loadAlerts();
+        if (tab === 'analysis') this.loadAnalysis();
+    },
+
+    async loadAlerts() {
+        const showResolved = document.getElementById('show-resolved')?.checked;
+        const res = await this.req(`alerts_list${showResolved ? '&resolved=true' : ''}`);
+        const container = document.getElementById('alerts-container');
+        if (!container) return;
+
+        // Update badge
+        this.updateAlertBadge(res.unresolved_count || 0);
+
+        if (res.error) {
+            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
+            return;
+        }
+
+        if (!res.alerts?.length) {
+            container.innerHTML = `<div style="text-align:center;padding:48px;font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No ${showResolved ? '' : 'unresolved '}alerts. Server looks clean.</div>`;
+            return;
+        }
+
+        const severityColor = { low: 'var(--text-dim)', medium: 'var(--amber)', high: 'var(--red)', critical: 'var(--red)' };
+        const typeIcon = { VELOCITY: '⚡', SNAPSHOT_DELTA: '📈', ALT_ACCOUNT: '👥', ECONOMY_SPIKE: '💹' };
+
+        container.innerHTML = res.alerts.map(a => {
+            const date = new Date(a.created_at).toLocaleString('en-GB', { hour12: false });
+            const col = severityColor[a.severity] || 'var(--text-secondary)';
+            const icon = typeIcon[a.type] || '⚠';
+            const resolved = a.resolved ? `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--green);background:var(--green-dim);padding:2px 6px;border-radius:2px;border:1px solid rgba(0,229,160,0.2);">RESOLVED by ${a.resolved_by}</span>` : '';
+
+            return `<div style="background:var(--bg-panel);border:1px solid var(--border-dim);border-left:3px solid ${col};border-radius:4px;padding:16px;margin-bottom:10px;${a.resolved ? 'opacity:0.5;' : ''}">
+                <div style="display:flex;align-items:flex-start;gap:12px;">
+                    <span style="font-size:18px;flex-shrink:0;">${icon}</span>
+                    <div style="flex:1;">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                            <span style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:${col};">${a.type}</span>
+                            <span style="font-family:'Space Mono',monospace;font-size:10px;background:${col === 'var(--red)' ? 'var(--red-dim)' : 'var(--amber-dim)'};color:${col};border:1px solid ${col === 'var(--red)' ? 'rgba(255,71,87,0.3)' : 'rgba(255,184,48,0.3)'};padding:1px 6px;border-radius:2px;">${a.severity.toUpperCase()}</span>
+                            <span style="font-weight:700;font-size:14px;">${a.player_name !== 'SERVER' ? `<span class="player-link" onclick="app.openProfileModal('${a.player_name}')">${a.player_name}</span>` : 'SERVER'}</span>
+                            ${resolved}
+                        </div>
+                        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);line-height:1.7;margin-bottom:8px;">${a.detail}</p>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${date}</span>
+                            ${!a.resolved ? `
+                            <button class="btn-sm" onclick="app.resolveAlert(${a.id})">RESOLVE</button>
+                            ${a.player_name !== 'SERVER' ? `
+                            <button class="btn-sm" onclick="app.openProfileModal('${a.player_name}')">VIEW PLAYER</button>
+                            <button class="btn-sm" onclick="app.quickRollback('${a.player_name}')">ROLLBACK</button>
+                            ` : ''}` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    },
+
+    updateAlertBadge(count) {
+        const badge = document.getElementById('alert-badge');
+        if (!badge) return;
+        if (count > 0) {
+            badge.style.display = 'inline-block';
+            badge.innerText = count > 99 ? '99+' : count;
+        } else {
+            badge.style.display = 'none';
+        }
+    },
+
+    async resolveAlert(id) {
+        const res = await this.req('alert_resolve', 'POST', { id });
+        if (res.error) return this.toast(res.error, "error");
+        this.toast("Alert resolved.");
+        this.loadAlerts();
+    },
+
+    async resolveAllAlerts() {
+        const ok = await this.confirm('Mark all unresolved alerts as resolved?');
+        if (!ok) return;
+        const res = await this.req('alerts_resolve_all', 'POST', {});
+        if (res.error) return this.toast(res.error, "error");
+        this.toast("All alerts resolved.");
+        this.loadAlerts();
+    },
+
+    async loadAnalysis() {
+        const container = document.getElementById('analysis-container');
+        if (!container) return;
+        container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Running analysis...</p>`;
+
+        const res = await this.req('security_analysis');
+        if (res.error) {
+            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
+            return;
+        }
+
+        const fmtC = this.fmtCoins.bind(this);
+        let html = '';
+
+        // Economy spikes
+        html += `<div class="card" style="margin-bottom:16px;">
+            <div class="card-title">Economy Spikes <span style="color:var(--red);margin-left:8px;">${res.spikes?.length || 0} found</span></div>`;
+        if (!res.spikes?.length) {
+            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No economy spikes detected.</p>`;
+        } else {
+            html += `<table class="data-table"><thead><tr><th>Time</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>`;
+            res.spikes.forEach(s => {
+                const date = new Date(s.snapped_at).toLocaleString('en-GB', { hour12: false });
+                const col = s.pct_change > 0 ? 'var(--red)' : 'var(--green)';
+                const sign = s.pct_change > 0 ? '+' : '';
+                html += `<tr>
+                    <td class="mono" style="color:var(--text-dim);">${date}</td>
+                    <td style="color:var(--text-secondary);">${fmtC(s.prev_coins)} ◎</td>
+                    <td style="color:var(--text-primary);">${fmtC(s.total_coins)} ◎</td>
+                    <td style="color:${col};font-weight:700;">${sign}${s.pct_change}%</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+        html += `</div>`;
+
+        // Snapshot deltas
+        html += `<div class="card" style="margin-bottom:16px;">
+            <div class="card-title">Largest Snapshot Jumps <span style="color:var(--amber);margin-left:8px;">${res.deltas?.length || 0} found</span></div>`;
+        if (!res.deltas?.length) {
+            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No suspicious jumps detected.</p>`;
+        } else {
+            html += `<table class="data-table"><thead><tr><th>Player</th><th>Before</th><th>After</th><th>Delta</th><th>Time</th><th></th></tr></thead><tbody>`;
+            res.deltas.forEach(d => {
+                const date = new Date(d.snapped_at).toLocaleDateString('en-GB');
+                const col = d.delta > 0 ? 'var(--red)' : 'var(--green)';
+                html += `<tr>
+                    <td style="font-weight:600;"><span class="player-link" onclick="app.openProfileModal('${d.name}')">${d.name}</span></td>
+                    <td style="color:var(--text-secondary);">${fmtC(d.prev_coins)} ◎</td>
+                    <td style="color:var(--text-primary);">${fmtC(d.current_coins)} ◎</td>
+                    <td style="color:${col};font-weight:700;">${d.delta > 0 ? '+' : ''}${fmtC(d.delta)} ◎</td>
+                    <td class="mono" style="color:var(--text-dim);">${date}</td>
+                    <td><button class="btn-sm" onclick="app.quickRollback('${d.name}')">ROLLBACK</button></td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+        html += `</div>`;
+
+        // Alt accounts
+        html += `<div class="card" style="margin-bottom:16px;">
+            <div class="card-title">Shared IPs / Possible Alts <span style="color:var(--purple);margin-left:8px;">${res.alts?.length || 0} groups</span></div>`;
+        if (!res.alts?.length) {
+            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No shared IPs detected.</p>`;
+        } else {
+            html += `<table class="data-table"><thead><tr><th>IP</th><th>Accounts</th><th>Names</th><th>Last Seen</th></tr></thead><tbody>`;
+            res.alts.forEach(a => {
+                const date = new Date(a.last_seen).toLocaleDateString('en-GB');
+                const names = a.names.split(', ').map(n =>
+                    `<span class="player-link" onclick="app.openProfileModal('${n}')">${n}</span>`
+                ).join(', ');
+                html += `<tr>
+                    <td class="mono" style="color:var(--text-dim);">${a.ip.replace(/(\d+\.\d+)\.\d+\.\d+/, '$1.*.*')}</td>
+                    <td style="color:var(--purple);font-weight:700;">${a.account_count}</td>
+                    <td>${names}</td>
+                    <td class="mono" style="color:var(--text-dim);">${date}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+        html += `</div>`;
+
+        container.innerHTML = html;
+    },
+
+    // ── ROLLBACK ──
+    quickRollback(name) {
+        this.setSecTab('rollback', document.querySelectorAll('.sec-tab')[2]);
+        document.getElementById('rollback-search').value = name;
+        this.loadRollbackTimeline();
+    },
+
+    async loadRollbackTimeline() {
+        const name = document.getElementById('rollback-search').value.trim();
+        if (!name) return;
+        const container = document.getElementById('rollback-container');
+        container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading timeline...</p>`;
+
+        const res = await this.req('rollback_timeline', 'POST', { name });
+        if (res.error) {
+            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// ${res.error}</p>`;
+            return;
+        }
+
+        const { player, snapshots } = res;
+        const fmtC = this.fmtCoins.bind(this);
+        const fmtD = this.fmtDuration.bind(this);
+
+        let html = `
+        <div class="card" style="margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:16px;">
+                <div style="width:44px;height:44px;clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:18px;color:white;flex-shrink:0;">${player.name.charAt(0).toUpperCase()}</div>
+                <div>
+                    <h3 style="font-size:18px;font-weight:800;margin-bottom:4px;">${player.name}</h3>
+                    <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">
+                        Current: <span style="color:var(--amber);">${fmtC(player.coins)} ◎</span>
+                        &nbsp;·&nbsp; Lv.${player.level}
+                        &nbsp;·&nbsp; <span style="color:var(--green);">${fmtD(player.total_playtime_s)}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="padding:0;">
+            <div style="padding:20px 24px 0;"><div class="card-title">Snapshot Timeline — ${snapshots.length} snapshots</div></div>
+            <div style="padding:0 24px 16px;">
+                <p style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:16px;line-height:1.7;">// Click RESTORE on any snapshot to roll this player back to that point in time. This will overwrite their current coins, level and XP.</p>`;
+
+        if (!snapshots.length) {
+            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No snapshots found. Data accumulates over time.</p>`;
+        } else {
+            html += `<div style="position:relative;">`;
+            // Timeline line
+            html += `<div style="position:absolute;left:20px;top:0;bottom:0;width:1px;background:var(--border-dim);"></div>`;
+
+            snapshots.forEach((snap, i) => {
+                const date = new Date(snap.snapped_at).toLocaleString('en-GB', { hour12: false });
+                const isCurrent = i === 0;
+                const dotColor = isCurrent ? 'var(--green)' : 'var(--border-mid)';
+
+                html += `<div style="display:flex;align-items:flex-start;gap:16px;padding:10px 0;position:relative;">
+                    <div style="width:40px;height:40px;border-radius:50%;background:var(--bg-raised);border:2px solid ${dotColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;z-index:1;">
+                        ${isCurrent ? '<span style="font-size:8px;font-family:\'Space Mono\',monospace;color:var(--green);">NOW</span>' : `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">${i + 1}</span>`}
+                    </div>
+                    <div style="flex:1;background:var(--bg-raised);border:1px solid ${isCurrent ? 'rgba(0,229,160,0.2)' : 'var(--border-dim)'};border-radius:4px;padding:12px 16px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                            <div>
+                                <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:4px;">${date}</div>
+                                <div style="display:flex;gap:16px;font-family:'Space Mono',monospace;font-size:12px;">
+                                    <span style="color:var(--amber);">${fmtC(snap.coins)} ◎</span>
+                                    <span style="color:var(--purple);">Lv.${snap.level}</span>
+                                    <span style="color:var(--text-secondary);">XP: ${Number(snap.xp).toLocaleString()}</span>
+                                </div>
+                            </div>
+                            ${!isCurrent ? `<button class="btn-sm btn-red" onclick="app.executeRollback(${snap.id},'${player.name}',${snap.coins},${snap.level})">RESTORE</button>` : `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--green);background:var(--green-dim);padding:2px 8px;border-radius:2px;border:1px solid rgba(0,229,160,0.2);">CURRENT</span>`}
+                        </div>
+                    </div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        html += `</div></div>`;
+        container.innerHTML = html;
+    },
+
+    async executeRollback(snapshotId, name, coins, level) {
+        const ok = await this.confirm(
+            `Roll back ${name} to: ${this.fmtCoins(coins)} coins, Level ${level}?\n\nThis will overwrite their current stats. A new snapshot will be taken after the rollback.`,
+            true
+        );
+        if (!ok) return;
+
+        const res = await this.req('rollback_execute', 'POST', { snapshot_id: snapshotId, name });
+        if (res.error) return this.toast(res.error, "error");
+
+        this.toast(`${name} rolled back. Coins: ${this.fmtCoins(res.restored.coins)} ◎`);
+        this.loadRollbackTimeline();
+        this.loadLogs();
+    },
+
+    // ── WEBHOOK CONFIG ──
+    async saveWebhook() {
+        const url = document.getElementById('webhook-url').value.trim();
+        if (!url) return this.toast("Enter a webhook URL.", "error");
+        localStorage.setItem('brume_webhook', url);
+        this.toast("Webhook URL saved locally.");
+    },
+
+    async testWebhook() {
+        const url = document.getElementById('webhook-url').value.trim() || localStorage.getItem('brume_webhook');
+        if (!url) return this.toast("Enter a webhook URL first.", "error");
+        const res = await this.req('test_webhook', 'POST', { webhook_url: url });
+        if (res.error) return this.toast("Webhook failed: " + res.error, "error");
+        this.toast("Discord webhook test sent!");
+    },
+
+    // Poll alert count every 60s when logged in
+    startAlertPolling() {
+        this.req('alerts_list').then(r => { if (!r.error) this.updateAlertBadge(r.unresolved_count || 0); });
+        setInterval(() => {
+            this.req('alerts_list').then(r => { if (!r.error) this.updateAlertBadge(r.unresolved_count || 0); });
+        }, 60000);
     }
 };
 
@@ -1257,5 +1560,6 @@ window.onload = () => {
         if (viewId === 'analytics') app.loadAnalytics();
         if (viewId === 'staff') app.loadStaff();
         if (viewId === 'settings') app.renderSettingsUI();
+        if (viewId === 'security') app.loadAlerts();
     };
 };
