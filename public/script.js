@@ -80,11 +80,20 @@ const app = {
 
         if (['admin', 'mod'].includes(this.session.user.role)) {
             this.loadStats();
-            this.loadLogs();
             this.loadOverviewLogs();
             this.startAlertPolling();
-            this.req(`analytics_economy&days=7`).then(r => { if (!r.error) { this.renderOverviewEcoChart(r); } });
-            this.req('analytics_retention').then(r => { if (!r.error) this.renderOverviewWeekStats(r); });
+            setTimeout(() => {
+                this.req(`analytics_economy&days=7`).then(r => { if (!r.error) this.renderOverviewEcoChart(r); });
+                this.req('analytics_retention').then(r => { if (!r.error) this.renderOverviewWeekStats(r); });
+                this.req('analytics_leaderboard').then(r => {
+                    if (!r.error && r.totals) {
+                        const el = document.getElementById('ov-avg-session');
+                        if (el) el.innerText = this.fmtDuration(r.totals.avg_playtime_s);
+                        const sel = document.getElementById('ov-sessions');
+                        if (sel) sel.innerText = Number(r.totals.total_sessions || 0).toLocaleString();
+                    }
+                });
+            }, 100);
         }
 
         if (this.session.user.role === 'admin') {
@@ -510,13 +519,17 @@ const app = {
 
         // KPIs
         document.getElementById('a-peak-eco').innerText = this.fmtCoins(peak.peak_coins || 0) + ' ◎';
-        if (snaps.length >= 2) {
-            const first = snaps[0].total_coins;
-            const last  = snaps[snaps.length - 1].total_coins;
-            const pct   = first > 0 ? (((last - first) / first) * 100).toFixed(1) : '0';
-            const el    = document.getElementById('a-eco-growth');
-            el.innerText = (pct >= 0 ? '+' : '') + pct + '%';
-            el.style.color = pct >= 0 ? 'var(--green)' : 'var(--red)';
+
+        // Growth — find first non-zero snapshot to compare against
+        const firstNonZero = snaps.find(s => s.total_coins > 0);
+        const lastSnap = snaps[snaps.length - 1];
+        if (firstNonZero && lastSnap && firstNonZero !== lastSnap) {
+            const pct = (((lastSnap.total_coins - firstNonZero.total_coins) / firstNonZero.total_coins) * 100).toFixed(1);
+            const el = document.getElementById('a-eco-growth');
+            el.innerText = (parseFloat(pct) >= 0 ? '+' : '') + pct + '%';
+            el.style.color = parseFloat(pct) >= 0 ? 'var(--green)' : 'var(--red)';
+        } else if (snaps.length > 0) {
+            document.getElementById('a-eco-growth').innerText = 'No change';
         }
 
         // ── Anomaly detection ──
@@ -584,8 +597,8 @@ const app = {
                         yAxisID: 'y',
                     },
                     {
-                        label: 'Players',
-                        data: snaps.map(s => s.total_players),
+                        label: 'Online Players',
+                        data: snaps.map(s => s.online_count ?? null),
                         borderColor: '#00e5a0',
                         backgroundColor: 'transparent',
                         borderWidth: 1.5,
@@ -593,6 +606,7 @@ const app = {
                         borderDash: [5, 5],
                         tension: 0.3,
                         yAxisID: 'y2',
+                        spanGaps: true,
                     }
                 ]
             },
@@ -614,7 +628,7 @@ const app = {
                         callbacks: {
                             label: ctx => {
                                 if (ctx.datasetIndex === 0) return ` Coins: ${Number(ctx.raw).toLocaleString()} ◎`;
-                                return ` Players: ${ctx.raw}`;
+                                return ctx.raw != null ? ` Online: ${ctx.raw}` : ` Online: no data`;
                             }
                         }
                     }
@@ -641,7 +655,7 @@ const app = {
 
     renderOverviewEcoChart(data) {
         this.destroyChart('ov-eco');
-        const snaps = (data.snapshots || []).slice(-24); // last 24 datapoints
+        const snaps = (data.snapshots || []).filter(s => s.total_coins > 0).slice(-24);
         if (!snaps.length) return;
         const ctx = document.getElementById('overview-eco-chart');
         if (!ctx) return;
@@ -659,19 +673,17 @@ const app = {
         const rows = data || [];
         const last = rows[rows.length - 1];
         if (!last) return;
-        document.getElementById('ov-new').innerText     = last.new_players || 0;
-        document.getElementById('ov-ret').innerText     = last.returning_players || 0;
-        document.getElementById('ov-sessions').innerText = last.total_players || 0;
-        // avg session from heatmap would need another call; leave as placeholder
+        document.getElementById('ov-new').innerText = last.new_players || 0;
+        document.getElementById('ov-ret').innerText = last.returning_players || 0;
+        // ov-sessions and ov-avg-session are set separately from leaderboard totals
     },
 
     renderRetention(data) {
         this.destroyChart('ret');
         const rows = data || [];
 
-        // Fill session KPIs from totals
-        const totalSessions = rows.reduce((s, r) => s + (r.total_players || 0), 0);
-        document.getElementById('a-sessions').innerText = totalSessions.toLocaleString();
+        // Total sessions KPI is set by renderLeaderboards from totals.total_sessions
+        // Here we just render the chart
 
         const labels = rows.map(r => {
             const d = new Date(r.week_start);
@@ -760,10 +772,10 @@ const app = {
         const fmtC = this.fmtCoins.bind(this);
 
         if (data.totals) {
-            document.getElementById('a-avg-session').innerText = fmt(data.totals.avg_playtime_s);
-            if (!document.getElementById('a-sessions').innerText || document.getElementById('a-sessions').innerText === '—') {
-                document.getElementById('a-sessions').innerText = Number(data.totals.total_sessions || 0).toLocaleString();
-            }
+            const avgEl = document.getElementById('a-avg-session');
+            if (avgEl) avgEl.innerText = fmt(data.totals.avg_playtime_s) || '0s';
+            const sesEl = document.getElementById('a-sessions');
+            if (sesEl) sesEl.innerText = Number(data.totals.total_sessions || 0).toLocaleString();
         }
 
         const makeTable = (rows, cols) => {
@@ -1556,6 +1568,7 @@ window.onload = () => {
         origNavigate(viewId);
         if (viewId === 'players') app.startPlayerPolling();
         if (viewId === 'bans') app.loadBans();
+        if (viewId === 'logs') app.loadLogs();
         if (viewId === 'console') app.initConsole();
         if (viewId === 'analytics') app.loadAnalytics();
         if (viewId === 'staff') app.loadStaff();
