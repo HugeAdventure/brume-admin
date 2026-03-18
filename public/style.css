@@ -1064,3 +1064,17 @@ body.sidebar-compact aside.sidebar .user-profile { justify-content: center; }
     .stats-grid { grid-template-columns: repeat(2, 1fr); }
     .page-header h1 { font-size: 28px; }
 }
+
+
+/* ── PLAYER DATABASE AUTOCOMPLETE ── */
+.autocomplete-item:last-child { border-bottom: none !important; }
+.autocomplete-item:hover { background: var(--bg-hover) !important; }
+
+/* ── PLAYER STAT CARD HOVER ── */
+#player-stat-grid > div {
+    transition: border-color 0.15s, transform 0.15s;
+}
+#player-stat-grid > div:hover {
+    border-color: var(--border-mid);
+    transform: translateY(-1px);
+}
