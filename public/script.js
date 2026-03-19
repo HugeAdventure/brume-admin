@@ -1,1915 +1,1008 @@
-const app = {
-    session: null,
+import mysql from 'mysql2/promise';
+import crypto from 'crypto';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 
-    init() {
-        const savedSession = localStorage.getItem('brume_session');
-        if (savedSession) {
-            this.session = JSON.parse(savedSession);
-            this.unlockUI();
+// Lazy RCON — won't crash the whole module if package is missing
+let Rcon;
+try { Rcon = require('rcon'); } catch { Rcon = null; }
+
+// ── Connection pool (reused across requests on Vercel) ──
+let pool;
+function getPool() {
+    if (!pool) {
+        pool = mysql.createPool({
+            uri: process.env.DATABASE_URL,
+            waitForConnections: true,
+            connectionLimit: 5,
+            queueLimit: 0,
+        });
+    }
+    return pool;
+}
+
+// ── RCON helper ──
+function rconExec(command) {
+    if (!Rcon) throw new Error('RCON package not installed. Run: npm install rcon');
+    return new Promise((resolve, reject) => {
+        const conn = new Rcon(
+            process.env.RCON_HOST || 'localhost',
+            parseInt(process.env.RCON_PORT || '25575'),
+            process.env.RCON_PASSWORD
+        );
+
+        let output = '';
+        const timeout = setTimeout(() => {
+            conn.disconnect();
+            reject(new Error('RCON timeout'));
+        }, 8000);
+
+        conn.on('auth', () => conn.send(command));
+        conn.on('response', (str) => {
+            output += str;
+            clearTimeout(timeout);
+            conn.disconnect();
+            resolve(output);
+        });
+        conn.on('error', (err) => {
+            clearTimeout(timeout);
+            reject(err);
+        });
+
+        conn.connect();
+    });
+}
+
+// ── Auth helper ──
+async function authenticate(req, db) {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return null;
+    const token = authHeader.split(' ')[1];
+    const [rows] = await db.execute('SELECT * FROM admins WHERE token = ?', [token]);
+    return rows[0] || null;
+}
+
+// ── Role guards ──
+const ROLES = {
+    modOrAbove: ['admin', 'mod'],
+    adminOnly:  ['admin'],
+};
+
+export default async function handler(req, res) {
+    const db = getPool();
+    
+    try {
+        const { mode } = req.query;
+
+        // ════ LOGIN ════
+        if (req.method === 'POST' && mode === 'login') {
+            const { username, password } = req.body;
+            const [rows] = await db.execute('SELECT * FROM admins WHERE username = ?', [username]);
+            const admin = rows[0];
+
+            // TODO: replace with bcrypt.compare(password, admin.password_hash)
+            if (!admin || admin.password !== password) {
+                return res.status(401).json({ error: "Invalid username or password" });
+            }
+
+            const token = crypto.randomBytes(32).toString('hex');
+            await db.execute('UPDATE admins SET token = ? WHERE id = ?', [token, admin.id]);
+
+            return res.json({
+                success: true,
+                token,
+                user: { username: admin.username, role: admin.role }
+            });
         }
-    },
 
-    async login(e) {
-        e.preventDefault();
-        const user = document.getElementById('auth-user').value;
-        const pass = document.getElementById('auth-pass').value;
-        const btn = document.getElementById('login-btn');
-        const err = document.getElementById('auth-error');
+        // ════ AUTHENTICATED ROUTES ════
+        const user = await authenticate(req, db);
+        if (!user) return res.status(401).json({ error: "Session expired or invalid" });
 
-        btn.innerText = "AUTHENTICATING...";
-        err.innerText = "";
+        // ── Stats ──
+        if (mode === 'stats' && ROLES.modOrAbove.includes(user.role)) {
+            const [[{ c: user_count }]] = await db.execute('SELECT COUNT(*) as c FROM brume_stats');
+            const [[{ c: total_economy }]] = await db.execute('SELECT SUM(coins) as c FROM brume_stats');
+            const [richest] = await db.execute('SELECT name, coins FROM brume_stats ORDER BY coins DESC LIMIT 1');
+            return res.json({
+                user_count,
+                total_economy: total_economy || 0,
+                top_player: richest[0] ? `${richest[0].name} (${Number(richest[0].coins).toLocaleString()})` : "None"
+            });
+        }
 
-        try {
-            const res = await fetch(`/api/ops?mode=login`, {
+        // ── Lookup ──
+        if (req.method === 'POST' && mode === 'lookup' && ROLES.modOrAbove.includes(user.role)) {
+            const { query } = req.body;
+            const [rows] = await db.execute(
+                'SELECT * FROM brume_stats WHERE name = ? OR uuid = ?', [query, query]
+            );
+            return res.json(rows[0] || { error: "Player not found" });
+        }
+
+        // ── Player autocomplete ──
+        if (mode === 'player_autocomplete' && ROLES.modOrAbove.includes(user.role)) {
+            const q = req.query.q || '';
+            if (q.length < 1) return res.json([]);
+            const [rows] = await db.execute(
+                `SELECT name, uuid, coins, level, total_playtime_s, last_seen
+                 FROM brume_stats WHERE name LIKE ? ORDER BY last_seen DESC LIMIT 8`,
+                [`${q}%`]
+            );
+            return res.json(rows);
+        }
+
+        // ── Rich player detail — everything about one player ──
+        if (req.method === 'POST' && mode === 'player_detail' && ROLES.modOrAbove.includes(user.role)) {
+            const { query } = req.body;
+            const [rows] = await db.execute(
+                'SELECT * FROM brume_stats WHERE name = ? OR uuid = ?', [query, query]
+            );
+            const player = rows[0];
+            if (!player) return res.status(404).json({ error: "Player not found" });
+
+            const uuid = player.uuid;
+            const name = player.name;
+
+            // Run all queries in parallel
+            const [
+                [snapshots],
+                [sessions],
+                [punishments],
+                [ipHistory],
+                [[coinRank]],
+                [[playtimeRank]],
+                [[levelRank]],
+                [[serverTotals]],
+                [alerts],
+                [recentSessions],
+            ] = await Promise.all([
+                db.execute(
+                    `SELECT coins, level, xp, snapped_at FROM player_snapshots
+                     WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 60`, [uuid]
+                ),
+                db.execute(
+                    `SELECT joined_at, quit_at, duration_s FROM session_log
+                     WHERE uuid = ? ORDER BY joined_at DESC LIMIT 20`, [uuid]
+                ),
+                db.execute(
+                    `SELECT * FROM punishments WHERE target_name = ? ORDER BY issued_at DESC`, [name]
+                ),
+                db.execute(
+                    `SELECT ip, MIN(joined_at) as first_seen, MAX(joined_at) as last_seen, COUNT(*) as times
+                     FROM ip_log WHERE uuid = ? GROUP BY ip ORDER BY last_seen DESC LIMIT 10`, [uuid]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) + 1 as rank FROM brume_stats WHERE coins > ?`, [player.coins]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) + 1 as rank FROM brume_stats WHERE total_playtime_s > ?`, [player.total_playtime_s || 0]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) + 1 as rank FROM brume_stats WHERE level > ? OR (level = ? AND xp > ?)`,
+                    [player.level, player.level, player.xp || 0]
+                ),
+                db.execute(
+                    `SELECT COUNT(*) as total_players, AVG(coins) as avg_coins, AVG(total_playtime_s) as avg_playtime FROM brume_stats`
+                ),
+                db.execute(
+                    `SELECT type, severity, detail, created_at, resolved FROM alerts
+                     WHERE player_name = ? ORDER BY created_at DESC LIMIT 5`, [name]
+                ),
+                db.execute(
+                    `SELECT joined_at, duration_s FROM session_log
+                     WHERE uuid = ? AND duration_s IS NOT NULL
+                     ORDER BY joined_at DESC LIMIT 30`, [uuid]
+                ),
+            ]);
+
+            // ── Calculated stats ──
+            const totalSessions = player.session_count || 0;
+            const totalPlaytimeH = (player.total_playtime_s || 0) / 3600;
+            const coinsPerHour = totalPlaytimeH > 0
+                ? Math.round(player.coins / totalPlaytimeH)
+                : 0;
+
+            const avgSessionS = recentSessions.length > 0
+                ? Math.round(recentSessions.reduce((s, r) => s + (r.duration_s || 0), 0) / recentSessions.length)
+                : 0;
+
+            // Wealth trend — compare current coins to 7 days ago snapshot
+            const weekAgoSnap = snapshots.find(s => {
+                const d = new Date(s.snapped_at);
+                return (Date.now() - d.getTime()) >= 6 * 24 * 3600 * 1000;
+            });
+            const wealthTrend = weekAgoSnap
+                ? Math.round(((player.coins - weekAgoSnap.coins) / Math.max(weekAgoSnap.coins, 1)) * 100)
+                : null;
+
+            // Percentile calculations
+            const totalPlayers = serverTotals.total_players || 1;
+            const coinPercentile = Math.round(((totalPlayers - coinRank.rank + 1) / totalPlayers) * 100);
+            const playtimePercentile = Math.round(((totalPlayers - playtimeRank.rank + 1) / totalPlayers) * 100);
+            const levelPercentile = Math.round(((totalPlayers - levelRank.rank + 1) / totalPlayers) * 100);
+
+            // Days since last seen
+            const lastSeen = player.last_seen ? new Date(player.last_seen) : null;
+            const daysSinceLastSeen = lastSeen
+                ? Math.floor((Date.now() - lastSeen.getTime()) / (1000 * 60 * 60 * 24))
+                : null;
+
+            // Is online right now?
+            const [[onlineCheck]] = await db.execute(
+                `SELECT uuid FROM online_sessions WHERE uuid = ?`, [uuid]
+            );
+            const isOnline = !!onlineCheck;
+
+            // Alt accounts
+            const altMap = {};
+            for (const ipRow of ipHistory) {
+                const [others] = await db.execute(
+                    `SELECT DISTINCT name, uuid FROM ip_log WHERE ip = ? AND uuid != ? LIMIT 5`,
+                    [ipRow.ip, uuid]
+                );
+                if (others.length) altMap[ipRow.ip] = others;
+            }
+
+            return res.json({
+                player: {
+                    ...player,
+                    is_online: isOnline,
+                    days_since_last_seen: daysSinceLastSeen,
+                },
+                stats: {
+                    coins_per_hour: coinsPerHour,
+                    avg_session_s: avgSessionS,
+                    wealth_trend_pct: wealthTrend,
+                    coin_rank: coinRank.rank,
+                    coin_percentile: coinPercentile,
+                    playtime_rank: playtimeRank.rank,
+                    playtime_percentile: playtimePercentile,
+                    level_rank: levelRank.rank,
+                    level_percentile: levelPercentile,
+                    total_players: totalPlayers,
+                    server_avg_coins: Math.round(serverTotals.avg_coins || 0),
+                    server_avg_playtime: Math.round(serverTotals.avg_playtime || 0),
+                },
+                snapshots: snapshots.reverse(), // chronological
+                sessions,
+                punishments,
+                ip_history: ipHistory,
+                alt_accounts: altMap,
+                security_alerts: alerts,
+            });
+        }
+
+        // ── Update player ──
+        if (req.method === 'POST' && mode === 'update' && user.role === 'admin') {
+            const { uuid, name, coins, level } = req.body;
+            await db.execute('UPDATE brume_stats SET coins = ?, level = ? WHERE uuid = ?', [coins, level, uuid]);
+            await db.execute(
+                'INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Updated ${name} — Coins: ${coins}, Lvl: ${level}`]
+            );
+            return res.json({ success: true });
+        }
+
+        // ── Staff list ──
+        if (mode === 'staff_list' && user.role === 'admin') {
+            const [rows] = await db.execute('SELECT id, username, role FROM admins ORDER BY role ASC');
+            return res.json(rows);
+        }
+
+        // ── Logs ──
+        if (mode === 'logs' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                'SELECT * FROM action_logs ORDER BY timestamp DESC LIMIT 50'
+            );
+            return res.json(rows);
+        }
+
+        // ════ ONLINE PLAYERS ════
+        // Reads from a `online_sessions` table that your Minecraft plugin writes to.
+        // Columns: uuid, name, coins, level, joined_at
+        if (mode === 'online_players' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT s.uuid, s.name, s.joined_at, b.coins, b.level
+                 FROM online_sessions s
+                 LEFT JOIN brume_stats b ON b.uuid = s.uuid
+                 ORDER BY s.joined_at ASC`
+            );
+            return res.json(rows);
+        }
+
+        // ════ BANS & WARNINGS ════
+
+        // Issue punishment
+        if (req.method === 'POST' && mode === 'punish' && ROLES.modOrAbove.includes(user.role)) {
+            const { target, type, reason, duration } = req.body;
+
+            if (!['warn', 'ban', 'tempban'].includes(type)) {
+                return res.status(400).json({ error: "Invalid punishment type" });
+            }
+
+            // Persist in DB
+            await db.execute(
+                `INSERT INTO punishments (target_name, type, reason, duration, issued_by, issued_at, active)
+                 VALUES (?, ?, ?, ?, ?, NOW(), 1)`,
+                [target, type, reason, duration || null, user.username]
+            );
+
+            // Fire RCON command so it takes effect in-game immediately
+            try {
+                if (type === 'ban') {
+                    await rconExec(`ban ${target} ${reason}`);
+                } else if (type === 'tempban') {
+                    // Requires a plugin like LiteBans/AdvancedBan:
+                    await rconExec(`tempban ${target} ${duration || '1d'} ${reason}`);
+                } else if (type === 'warn') {
+                    await rconExec(`warn ${target} ${reason}`);
+                }
+            } catch (rconErr) {
+                // RCON fail is non-fatal — punishment is still logged in DB
+                console.warn('RCON error (punishment still saved):', rconErr.message);
+            }
+
+            await db.execute(
+                'INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Issued ${type.toUpperCase()} to ${target}: "${reason}"`]
+            );
+
+            return res.json({ success: true });
+        }
+
+        // List active punishments
+        if (mode === 'bans_list' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT * FROM punishments WHERE active = 1 ORDER BY issued_at DESC`
+            );
+            return res.json(rows);
+        }
+
+        // Revoke punishment
+        if (req.method === 'POST' && mode === 'revoke' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            const [[p]] = await db.execute('SELECT * FROM punishments WHERE id = ?', [id]);
+            if (!p) return res.status(404).json({ error: "Punishment not found" });
+
+            await db.execute('UPDATE punishments SET active = 0 WHERE id = ?', [id]);
+
+            // Unban in-game if it was a ban
+            try {
+                if (p.type === 'ban' || p.type === 'tempban') {
+                    await rconExec(`pardon ${p.target_name}`);
+                }
+            } catch (rconErr) {
+                console.warn('RCON error (revoke still saved):', rconErr.message);
+            }
+
+            await db.execute(
+                'INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Revoked ${p.type.toUpperCase()} for ${p.target_name}`]
+            );
+
+            return res.json({ success: true });
+        }
+
+        // ════ SERVER CONSOLE ════
+        if (req.method === 'POST' && mode === 'console' && user.role === 'admin') {
+            const { command } = req.body;
+
+            // Block dangerous commands
+            const blocked = ['stop', 'restart', 'reload', 'op ', 'deop '];
+            const lower = command.toLowerCase().trim();
+            if (blocked.some(b => lower.startsWith(b))) {
+                return res.status(403).json({ error: "Command blocked for safety. Use your server host panel for server lifecycle commands." });
+            }
+
+            let output;
+            try {
+                output = await rconExec(command);
+            } catch (err) {
+                return res.status(500).json({ error: `RCON error: ${err.message}` });
+            }
+
+            await db.execute(
+                'INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Console: /${command}`]
+            );
+
+            return res.json({ success: true, output: output || '(no output)' });
+        }
+
+        // ════ ANALYTICS ════
+
+        // Economy inflation — hourly snapshots for the last N days
+        if (mode === 'analytics_economy' && ROLES.modOrAbove.includes(user.role)) {
+            const days = parseInt(req.query.days) || 30;
+            const [rows] = await db.execute(
+                `SELECT
+                    DATE_FORMAT(snapped_at, '%Y-%m-%d %H:00') as hour,
+                    GREATEST(total_coins, 0) as total_coins,
+                    total_players as registered_players,
+                    online_count,
+                    GREATEST(avg_coins, 0) as avg_coins,
+                    GREATEST(max_coins, 0) as max_coins
+                 FROM economy_snapshots
+                 WHERE snapped_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                 ORDER BY snapped_at ASC`,
+                [days]
+            );
+            const [[peak]] = await db.execute(
+                `SELECT GREATEST(MAX(total_coins), 0) as peak_coins, MAX(total_players) as peak_players, MAX(online_count) as peak_online FROM economy_snapshots`
+            );
+            return res.json({ snapshots: rows, peak });
+        }
+
+        // Playtime heatmap — avg sessions by hour-of-day × day-of-week
+        if (mode === 'analytics_heatmap' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT
+                    DAYOFWEEK(joined_at) - 1 AS day_of_week,
+                    HOUR(joined_at)          AS hour_of_day,
+                    COUNT(*)                 AS session_count,
+                    AVG(duration_s)          AS avg_duration_s
+                 FROM session_log
+                 WHERE joined_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+                   AND duration_s IS NOT NULL
+                 GROUP BY day_of_week, hour_of_day
+                 ORDER BY day_of_week, hour_of_day`
+            );
+            return res.json(rows);
+        }
+
+        // Retention — new vs returning players per week
+        if (mode === 'analytics_retention' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT
+                    YEARWEEK(joined_at, 1)                         AS yw,
+                    MIN(DATE(joined_at))                           AS week_start,
+                    COUNT(DISTINCT uuid)                           AS total_players,
+                    COUNT(DISTINCT CASE
+                        WHEN joined_at = (SELECT MIN(s2.joined_at) FROM session_log s2 WHERE s2.uuid = session_log.uuid)
+                        THEN uuid END)                             AS new_players,
+                    COUNT(DISTINCT CASE
+                        WHEN joined_at > (SELECT MIN(s2.joined_at) FROM session_log s2 WHERE s2.uuid = session_log.uuid)
+                        THEN uuid END)                             AS returning_players
+                 FROM session_log
+                 WHERE joined_at >= DATE_SUB(NOW(), INTERVAL 12 WEEK)
+                 GROUP BY yw
+                 ORDER BY yw ASC`
+            );
+            return res.json(rows);
+        }
+
+        // Player growth history — stat snapshots for one player
+        if (mode === 'analytics_player' && ROLES.modOrAbove.includes(user.role)) {
+            const { uuid } = req.query;
+            if (!uuid) return res.status(400).json({ error: "uuid required" });
+            const [rows] = await db.execute(
+                `SELECT coins, level, xp, snapped_at
+                 FROM player_snapshots
+                 WHERE uuid = ?
+                 ORDER BY snapped_at ASC
+                 LIMIT 365`,
+                [uuid]
+            );
+            return res.json(rows);
+        }
+
+        // Leaderboards — top players by various metrics
+        if (mode === 'analytics_leaderboard' && ROLES.modOrAbove.includes(user.role)) {
+            const [byCoins] = await db.execute(
+                `SELECT name, coins, level, total_playtime_s, session_count
+                 FROM brume_stats ORDER BY coins DESC LIMIT 10`
+            );
+            const [byPlaytime] = await db.execute(
+                `SELECT name, total_playtime_s, session_count, coins, level
+                 FROM brume_stats ORDER BY total_playtime_s DESC LIMIT 10`
+            );
+            const [byLevel] = await db.execute(
+                `SELECT name, level, xp, coins, total_playtime_s
+                 FROM brume_stats ORDER BY level DESC, xp DESC LIMIT 10`
+            );
+            // Server-wide totals
+            const [[totals]] = await db.execute(
+                `SELECT
+                    COUNT(*) as total_players,
+                    SUM(total_playtime_s) as total_playtime_s,
+                    SUM(session_count) as total_sessions,
+                    AVG(total_playtime_s) as avg_playtime_s
+                 FROM brume_stats`
+            );
+            return res.json({ byCoins, byPlaytime, byLevel, totals });
+        }
+
+        // ════ GLOBAL SEARCH ════
+        if (req.method === 'POST' && mode === 'search' && ROLES.modOrAbove.includes(user.role)) {
+            const { query } = req.body;
+            if (!query || query.length < 2) return res.json({ players: [], punishments: [], logs: [] });
+
+            const q = `%${query}%`;
+            const [players] = await db.execute(
+                `SELECT name, uuid, coins, level FROM brume_stats WHERE name LIKE ? OR uuid LIKE ? LIMIT 5`, [q, q]
+            );
+            const [punishments] = await db.execute(
+                `SELECT * FROM punishments WHERE target_name LIKE ? OR reason LIKE ? ORDER BY issued_at DESC LIMIT 5`, [q, q]
+            );
+            const [logs] = await db.execute(
+                `SELECT * FROM action_logs WHERE action LIKE ? OR username LIKE ? ORDER BY timestamp DESC LIMIT 5`, [q, q]
+            );
+            return res.json({ players, punishments, logs });
+        }
+
+        // ════ PLAYER PROFILE ════
+        if (req.method === 'POST' && mode === 'player_punishments' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [rows] = await db.execute(
+                `SELECT * FROM punishments WHERE target_name = ? ORDER BY issued_at DESC LIMIT 20`, [name]
+            );
+            return res.json(rows);
+        }
+
+        if (req.method === 'POST' && mode === 'player_sessions' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [rows] = await db.execute(
+                `SELECT joined_at, quit_at, duration_s FROM session_log WHERE name = ? ORDER BY joined_at DESC LIMIT 20`, [name]
+            );
+            return res.json(rows);
+        }
+
+        // Override analytics_player to support name-based lookup
+        if (mode === 'analytics_player' && ROLES.modOrAbove.includes(user.role)) {
+            let uuid = req.query.uuid;
+            const name = req.query.name;
+            if (uuid === 'lookup' && name) {
+                const [[p]] = await db.execute(`SELECT uuid FROM brume_stats WHERE name = ? LIMIT 1`, [decodeURIComponent(name)]);
+                uuid = p?.uuid;
+            }
+            if (!uuid) return res.json([]);
+            const [rows] = await db.execute(
+                `SELECT coins, level, xp, snapped_at FROM player_snapshots WHERE uuid = ? ORDER BY snapped_at ASC LIMIT 365`, [uuid]
+            );
+            return res.json(rows);
+        }
+
+        // ════ STAFF MANAGEMENT ════
+        if (req.method === 'POST' && mode === 'staff_create' && user.role === 'admin') {
+            const { username, password, role, invite_code } = req.body;
+
+            if (invite_code !== process.env.INVITE_CODE) {
+                return res.status(403).json({ error: "Invalid invite code." });
+            }
+            if (!['mod', 'dev', 'admin'].includes(role)) {
+                return res.status(400).json({ error: "Invalid role." });
+            }
+
+            const [existing] = await db.execute('SELECT id FROM admins WHERE username = ?', [username]);
+            if (existing.length) return res.status(400).json({ error: "Username already exists." });
+
+            // TODO: hash password with bcrypt before storing
+            await db.execute(
+                'INSERT INTO admins (username, password, role) VALUES (?, ?, ?)',
+                [username, password, role]
+            );
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Created staff account: ${username} (${role})`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'staff_update' && user.role === 'admin') {
+            const { id, role } = req.body;
+            if (!['mod', 'dev', 'admin'].includes(role)) return res.status(400).json({ error: "Invalid role." });
+            const [[target]] = await db.execute('SELECT username FROM admins WHERE id = ?', [id]);
+            if (!target) return res.status(404).json({ error: "User not found." });
+            await db.execute('UPDATE admins SET role = ? WHERE id = ?', [role, id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Changed ${target.username}'s role to ${role}`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'staff_reset_token' && user.role === 'admin') {
+            const { id } = req.body;
+            const newToken = crypto.randomBytes(32).toString('hex');
+            const [[target]] = await db.execute('SELECT username FROM admins WHERE id = ?', [id]);
+            if (!target) return res.status(404).json({ error: "User not found." });
+            await db.execute('UPDATE admins SET token = ? WHERE id = ?', [newToken, id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Reset session token for ${target.username}`]);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'staff_delete' && user.role === 'admin') {
+            const { id } = req.body;
+            if (id === user.id) return res.status(400).json({ error: "Cannot delete your own account." });
+            const [[target]] = await db.execute('SELECT username FROM admins WHERE id = ?', [id]);
+            if (!target) return res.status(404).json({ error: "User not found." });
+            await db.execute('DELETE FROM admins WHERE id = ?', [id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Deleted staff account: ${target.username}`]);
+            return res.json({ success: true });
+        }
+
+        // ════ ACCOUNT SETTINGS ════
+        if (req.method === 'POST' && mode === 'change_password') {
+            const { password } = req.body;
+            if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+            // TODO: hash with bcrypt
+            await db.execute('UPDATE admins SET password = ? WHERE id = ?', [password, user.id]);
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Changed their password`]);
+            return res.json({ success: true });
+        }
+
+        // ════ DANGER ZONE ════
+        if (req.method === 'POST' && mode === 'purge_snapshots' && user.role === 'admin') {
+            await db.execute('TRUNCATE TABLE economy_snapshots');
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, 'Purged all economy snapshots']);
+            return res.json({ success: true });
+        }
+
+        if (req.method === 'POST' && mode === 'purge_sessions' && user.role === 'admin') {
+            await db.execute('TRUNCATE TABLE session_log');
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, 'Purged all session logs']);
+            return res.json({ success: true });
+        }
+
+        // ════ ITEM ARCHITECT ════
+        if (req.method === 'POST' && mode === 'save_item' && ROLES.modOrAbove.includes(user.role)) {
+            const { item } = req.body;
+            if (!item?.id) return res.status(400).json({ error: "Item ID required." });
+
+            await db.execute(
+                `INSERT INTO architect_items (item_id, created_by, data, updated_at)
+                 VALUES (?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE data=VALUES(data), updated_at=NOW(), created_by=VALUES(created_by)`,
+                [item.id, user.username, JSON.stringify(item)]
+            );
+            return res.json({ success: true });
+        }
+
+        if (mode === 'load_items' && ROLES.modOrAbove.includes(user.role)) {
+            const [rows] = await db.execute(
+                `SELECT item_id, created_by, data, updated_at FROM architect_items ORDER BY updated_at DESC`
+            );
+            return res.json(rows.map(r => ({ ...JSON.parse(r.data), _meta: { created_by: r.created_by, updated_at: r.updated_at } })));
+        }
+
+        if (req.method === 'POST' && mode === 'delete_item' && user.role === 'admin') {
+            const { item_id } = req.body;
+            await db.execute('DELETE FROM architect_items WHERE item_id = ?', [item_id]);
+            return res.json({ success: true });
+        }
+
+        // ════ ITEM ARCHITECT ════
+        if (mode === 'items_list' && ROLES.modOrAbove.includes(user.role)) {
+            await db.execute(`CREATE TABLE IF NOT EXISTS custom_items (id INT AUTO_INCREMENT PRIMARY KEY, item_id VARCHAR(64) NOT NULL, tier VARCHAR(16), item_type VARCHAR(32), data JSON NOT NULL, created_by VARCHAR(64), updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX idx_item_id (item_id))`);
+            const [rows] = await db.execute(`SELECT id as db_id, item_id as id, tier, item_type, data FROM custom_items ORDER BY updated_at DESC`);
+            return res.json(rows.map(r => ({ ...JSON.parse(r.data), db_id: r.db_id, id: r.id, tier: r.tier, item_type: r.item_type })));
+        }
+
+        if (req.method === 'POST' && mode === 'items_save' && ROLES.modOrAbove.includes(user.role)) {
+            const { db_id, id, tier, item_type, ...rest } = req.body;
+            const dataJson = JSON.stringify({ id, tier, item_type, ...rest });
+            if (db_id) {
+                await db.execute(`UPDATE custom_items SET item_id=?, tier=?, item_type=?, data=?, created_by=? WHERE id=?`, [id, tier, item_type, dataJson, user.username, db_id]);
+                return res.json({ success: true, id: db_id });
+            } else {
+                const [result] = await db.execute(`INSERT INTO custom_items (item_id, tier, item_type, data, created_by) VALUES (?, ?, ?, ?, ?)`, [id, tier, item_type, dataJson, user.username]);
+                return res.json({ success: true, id: result.insertId });
+            }
+        }
+
+        if (req.method === 'POST' && mode === 'items_delete' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            await db.execute(`DELETE FROM custom_items WHERE id=?`, [id]);
+            return res.json({ success: true });
+        }
+
+        // ════ SECURITY & ALERTS ════
+
+        // List unresolved alerts
+        if (mode === 'alerts_list' && ROLES.modOrAbove.includes(user.role)) {
+            const limit = parseInt(req.query.limit) || 50;
+            const showResolved = req.query.resolved === 'true';
+            const [rows] = await db.execute(
+                `SELECT * FROM alerts
+                 WHERE resolved = ?
+                 ORDER BY created_at DESC
+                 LIMIT ?`,
+                [showResolved ? 1 : 0, limit]
+            );
+            const [[{ count }]] = await db.execute(
+                `SELECT COUNT(*) as count FROM alerts WHERE resolved = 0`
+            );
+            return res.json({ alerts: rows, unresolved_count: count });
+        }
+
+        // Resolve an alert
+        if (req.method === 'POST' && mode === 'alert_resolve' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            await db.execute(
+                `UPDATE alerts SET resolved = 1, resolved_by = ?, resolved_at = NOW() WHERE id = ?`,
+                [user.username, id]
+            );
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Resolved alert #${id}`]);
+            return res.json({ success: true });
+        }
+
+        // Resolve all alerts
+        if (req.method === 'POST' && mode === 'alerts_resolve_all' && ROLES.modOrAbove.includes(user.role)) {
+            await db.execute(
+                `UPDATE alerts SET resolved = 1, resolved_by = ?, resolved_at = NOW() WHERE resolved = 0`,
+                [user.username]
+            );
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
+                [user.username, `Resolved all security alerts`]);
+            return res.json({ success: true });
+        }
+
+        // Security analysis — runs all three detection queries on demand
+        if (mode === 'security_analysis' && ROLES.modOrAbove.includes(user.role)) {
+
+            // 1. Velocity — players who gained a lot in a single session (from alerts)
+            const [velocity] = await db.execute(
+                `SELECT player_name, detail, created_at, resolved
+                 FROM alerts WHERE type = 'VELOCITY'
+                 ORDER BY created_at DESC LIMIT 20`
+            );
+
+            // 2. Snapshot delta — biggest single-snapshot coin jumps per player
+            const [deltas] = await db.execute(
+                `SELECT
+                    a.name,
+                    a.uuid,
+                    a.coins AS current_coins,
+                    b.coins AS prev_coins,
+                    (a.coins - b.coins) AS delta,
+                    a.snapped_at
+                 FROM player_snapshots a
+                 JOIN player_snapshots b
+                   ON b.uuid = a.uuid
+                   AND b.id = (
+                     SELECT MAX(id) FROM player_snapshots
+                     WHERE uuid = a.uuid AND id < a.id
+                   )
+                 WHERE ABS(a.coins - b.coins) > 10000
+                 ORDER BY ABS(a.coins - b.coins) DESC
+                 LIMIT 20`
+            );
+
+            // 3. Alt accounts — UUIDs sharing an IP
+            const [alts] = await db.execute(
+                `SELECT
+                    ip,
+                    GROUP_CONCAT(DISTINCT name ORDER BY name SEPARATOR ', ') AS names,
+                    COUNT(DISTINCT uuid) AS account_count,
+                    MAX(joined_at) AS last_seen
+                 FROM ip_log
+                 GROUP BY ip
+                 HAVING COUNT(DISTINCT uuid) > 1
+                 ORDER BY account_count DESC, last_seen DESC
+                 LIMIT 20`
+            );
+
+            // 4. Economy spikes from snapshots
+            const [spikes] = await db.execute(
+                `SELECT
+                    curr.snapped_at,
+                    curr.total_coins,
+                    prev.total_coins AS prev_coins,
+                    ROUND(((curr.total_coins - prev.total_coins) / prev.total_coins) * 100, 1) AS pct_change
+                 FROM economy_snapshots curr
+                 JOIN economy_snapshots prev ON prev.id = curr.id - 1
+                 WHERE prev.total_coins > 0
+                   AND ABS((curr.total_coins - prev.total_coins) / prev.total_coins) >= 0.10
+                 ORDER BY curr.snapped_at DESC
+                 LIMIT 20`
+            );
+
+            return res.json({ velocity, deltas, alts, spikes });
+        }
+
+        // Player IP history
+        if (req.method === 'POST' && mode === 'player_ip_history' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [ips] = await db.execute(
+                `SELECT DISTINCT ip, MIN(joined_at) AS first_seen, MAX(joined_at) AS last_seen, COUNT(*) AS times
+                 FROM ip_log WHERE name = ?
+                 GROUP BY ip ORDER BY last_seen DESC`,
+                [name]
+            );
+            // For each IP, find other players who used it
+            const results = await Promise.all(ips.map(async row => {
+                const [others] = await db.execute(
+                    `SELECT DISTINCT name FROM ip_log WHERE ip = ? AND name != ? LIMIT 10`,
+                    [row.ip, name]
+                );
+                return { ...row, shared_with: others.map(r => r.name) };
+            }));
+            return res.json(results);
+        }
+
+        // ════ ROLLBACK ════
+
+        if (req.method === 'POST' && mode === 'rollback_timeline' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [[player]] = await db.execute(
+                `SELECT uuid, name, coins, level, xp, total_playtime_s FROM brume_stats WHERE name = ?`, [name]
+            );
+            if (!player) return res.status(404).json({ error: 'Player not found' });
+
+            const [snapshots] = await db.execute(
+                `SELECT id, coins, level, xp, snapped_at FROM player_snapshots
+                 WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 50`,
+                [player.uuid]
+            );
+
+            // Also get inventory snapshot timestamps so UI can show which rollback points have inventory
+            const [invSnaps] = await db.execute(
+                `SELECT id, snapped_at, trigger_type FROM inventory_snapshots
+                 WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 50`,
+                [player.uuid]
+            );
+
+            return res.json({ player, snapshots, inv_snapshots: invSnaps });
+        }
+
+        // Execute rollback — now restores inventory too
+        if (req.method === 'POST' && mode === 'rollback_execute' && user.role === 'admin') {
+            const { snapshot_id, name, inv_snapshot_id } = req.body;
+
+            const [[snap]] = await db.execute(
+                `SELECT ps.*, bs.uuid FROM player_snapshots ps
+                 JOIN brume_stats bs ON bs.uuid = ps.uuid
+                 WHERE ps.id = ? AND bs.name = ?`,
+                [snapshot_id, name]
+            );
+            if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
+
+            // Restore stats
+            await db.execute(
+                `UPDATE brume_stats SET coins = ?, level = ?, xp = ? WHERE uuid = ?`,
+                [snap.coins, snap.level, snap.xp, snap.uuid]
+            );
+
+            try { await rconExec(`economy set ${name} ${snap.coins}`); } catch (e) {}
+
+            let invRestored = false;
+            // Restore inventory if an inv_snapshot_id was provided
+            if (inv_snapshot_id) {
+                const [[invSnap]] = await db.execute(
+                    `SELECT * FROM inventory_snapshots WHERE id = ? AND uuid = ?`,
+                    [inv_snapshot_id, snap.uuid]
+                );
+                if (invSnap) {
+                    // Store the restored inventory data so Skript can apply it on next join
+                    await db.execute(
+                        `UPDATE brume_stats SET inventory = ? WHERE uuid = ?`,
+                        [invSnap.snapshot_data, snap.uuid]
+                    );
+                    // Also store armor + offhand in new columns
+                    await db.execute(
+                        `UPDATE brume_stats SET armor_restore = ?, offhand_restore = ? WHERE uuid = ?`,
+                        [invSnap.armor_data, invSnap.offhand_data, snap.uuid]
+                    ).catch(() => {}); // columns may not exist yet
+                    invRestored = true;
+                }
+            }
+
+            const snapDate = new Date(snap.snapped_at).toLocaleString('en-GB');
+            const logMsg = `Rolled back ${name} to ${snapDate} — Coins: ${snap.coins}, Lv: ${snap.level}, XP: ${snap.xp}${invRestored ? ', + inventory' : ''}`;
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)', [user.username, logMsg]);
+
+            await db.execute(
+                `INSERT INTO player_snapshots (uuid, name, coins, level, xp) VALUES (?, ?, ?, ?, ?)`,
+                [snap.uuid, name, snap.coins, snap.level, snap.xp]
+            );
+
+            return res.json({ success: true, inv_restored: invRestored, restored: { coins: snap.coins, level: snap.level, xp: snap.xp } });
+        }
+
+        // ════ INVENTORY INSPECTOR ════
+
+        // Get latest inventory + vault for a player
+        if (req.method === 'POST' && mode === 'player_inventory' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [[player]] = await db.execute(
+                `SELECT uuid FROM brume_stats WHERE name = ?`, [name]
+            );
+            if (!player) return res.status(404).json({ error: 'Player not found' });
+
+            const [[latestInv]] = await db.execute(
+                `SELECT * FROM inventory_snapshots WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 1`,
+                [player.uuid]
+            );
+
+            // Get latest vault snapshot per page
+            const [vaultSnaps] = await db.execute(
+                `SELECT vs.* FROM vault_snapshots vs
+                 INNER JOIN (
+                     SELECT page, MAX(snapped_at) as latest FROM vault_snapshots WHERE uuid = ? GROUP BY page
+                 ) latest ON vs.page = latest.page AND vs.snapped_at = latest.latest
+                 WHERE vs.uuid = ? ORDER BY vs.page ASC`,
+                [player.uuid, player.uuid]
+            );
+
+            return res.json({
+                inventory: latestInv ? {
+                    id: latestInv.id,
+                    slots: JSON.parse(latestInv.snapshot_data || '[]'),
+                    armor: JSON.parse(latestInv.armor_data || '[]'),
+                    offhand: latestInv.offhand_data ? JSON.parse(latestInv.offhand_data) : null,
+                    snapped_at: latestInv.snapped_at,
+                } : null,
+                vault: vaultSnaps.map(v => ({
+                    page: v.page,
+                    slots: JSON.parse(v.snapshot_data || '[]'),
+                    snapped_at: v.snapped_at,
+                })),
+            });
+        }
+
+        // Get a specific inventory snapshot detail
+        if (req.method === 'POST' && mode === 'inventory_snapshot_detail' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            const [[snap]] = await db.execute(
+                `SELECT * FROM inventory_snapshots WHERE id = ?`, [id]
+            );
+            if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
+            return res.json({
+                id: snap.id,
+                slots: JSON.parse(snap.snapshot_data || '[]'),
+                armor: JSON.parse(snap.armor_data || '[]'),
+                offhand: snap.offhand_data ? JSON.parse(snap.offhand_data) : null,
+                snapped_at: snap.snapped_at,
+                trigger_type: snap.trigger_type,
+            });
+        }
+
+        // List inventory snapshot timeline for a player
+        if (req.method === 'POST' && mode === 'inventory_timeline' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [[player]] = await db.execute(
+                `SELECT uuid FROM brume_stats WHERE name = ?`, [name]
+            );
+            if (!player) return res.status(404).json({ error: 'Player not found' });
+            const [snaps] = await db.execute(
+                `SELECT id, snapped_at, trigger_type FROM inventory_snapshots
+                 WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 100`,
+                [player.uuid]
+            );
+            return res.json(snaps);
+        }
+
+        // Discord webhook test
+        if (req.method === 'POST' && mode === 'test_webhook' && user.role === 'admin') {
+            const { webhook_url } = req.body;
+            if (!webhook_url) return res.status(400).json({ error: 'No webhook URL provided' });
+
+            const payload = {
+                embeds: [{
+                    title: '✅ Brume Security — Webhook Test',
+                    description: 'Your Discord webhook is configured correctly.',
+                    color: 0x5b6aff,
+                    footer: { text: `Tested by ${user.username}` }
+                }]
+            };
+
+            const r = await fetch(webhook_url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: user, password: pass })
-            }).then(r => r.json());
-
-            if (res.error) throw new Error(res.error);
-
-            this.session = { token: res.token, user: res.user };
-            localStorage.setItem('brume_session', JSON.stringify(this.session));
-
-            this.unlockUI();
-            this.toast("Welcome back, " + this.session.user.username);
-
-        } catch (error) {
-            err.innerText = "// " + error.message;
-            btn.innerText = "AUTHENTICATE";
-        }
-    },
-
-    logout() {
-        localStorage.removeItem('brume_session');
-        location.reload();
-    },
-
-    async req(mode, method = 'GET', body = null) {
-        if (!this.session) return { error: "No session" };
-
-        const opts = {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.session.token}`
-            }
-        };
-        if (body) opts.body = JSON.stringify(body);
-
-        const res = await fetch(`/api/ops?mode=${mode}`, opts).then(r => r.json());
-
-        if (res.error === "Session expired or invalid") this.logout();
-        return res;
-    },
-
-    async unlockUI() {
-        document.getElementById('auth-layer').style.display = 'none';
-        document.getElementById('dashboard-layer').style.display = 'flex';
-
-        document.getElementById('profile-name').innerText = this.session.user.username;
-        document.getElementById('profile-role').innerText = this.session.user.role.toUpperCase();
-        document.getElementById('profile-avatar').innerText = this.session.user.username.charAt(0).toUpperCase();
-
-        // Apply role badge class
-        const badge = document.getElementById('profile-role');
-        badge.className = 'badge ' + this.session.user.role;
-
-        this.applyRolePermissions();
-        this.loadSettings();
-
-        if (['admin', 'mod'].includes(this.session.user.role)) {
-            this.loadStats();
-            this.loadOverviewLogs();
-            this.startAlertPolling();
-            setTimeout(() => {
-                this.req(`analytics_economy&days=7`).then(r => { if (!r.error) this.renderOverviewEcoChart(r); });
-                this.req('analytics_retention').then(r => { if (!r.error) this.renderOverviewWeekStats(r); });
-                this.req('analytics_leaderboard').then(r => {
-                    if (!r.error && r.totals) {
-                        const el = document.getElementById('ov-avg-session');
-                        if (el) el.innerText = this.fmtDuration(r.totals.avg_playtime_s);
-                        const sel = document.getElementById('ov-sessions');
-                        if (sel) sel.innerText = Number(r.totals.total_sessions || 0).toLocaleString();
-                    }
-                });
-            }, 100);
-        }
-
-        if (this.session.user.role === 'admin') {
-            this.loadStaff();
-        }
-    },
-
-    applyRolePermissions() {
-        const role = this.session.user.role;
-        const links = document.querySelectorAll('.nav-link[data-roles]');
-        let firstAvailableView = null;
-
-        links.forEach(link => {
-            const allowedRoles = link.getAttribute('data-roles').split(',');
-            if (!allowedRoles.includes(role)) {
-                link.style.display = 'none';
-            } else if (!firstAvailableView) {
-                firstAvailableView = link.getAttribute('onclick').match(/'([^']+)'/)[1];
-            }
-        });
-
-        if (firstAvailableView) this.navigate(firstAvailableView);
-    },
-
-    navigate(viewId) {
-        document.querySelectorAll('.view-page').forEach(e => e.classList.remove('active'));
-        document.getElementById(`view-${viewId}`).classList.add('active');
-        document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
-        if (event && event.target) event.target.classList.add('active');
-        // Close sidebar on mobile after navigation
-        if (window.innerWidth <= 768) this.closeSidebar();
-    },
-
-    toast(msg, type = "success") {
-        const c = document.getElementById('toast-container');
-        const el = document.createElement('div');
-        el.className = `toast ${type}`;
-        el.innerText = msg;
-        c.appendChild(el);
-        setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 300); }, 3000);
-    },
-
-    async loadStats() {
-        const res = await this.req('stats');
-        if (!res || res.error) return;
-        const u = document.getElementById('stat-users');
-        const e = document.getElementById('stat-eco');
-        const r = document.getElementById('stat-rich');
-        if (u) u.innerText = Number(res.user_count || 0).toLocaleString();
-        if (e) e.innerText = Number(res.total_economy || 0).toLocaleString() + ' ◎';
-        if (r) r.innerText = res.top_player || 'None';
-    },
-
-    async loadOverviewLogs() {
-        const container = document.getElementById('overview-logs-container');
-        if (!container) return;
-        const res = await this.req('logs');
-        // Handle error or non-array response
-        if (!res || res.error || !Array.isArray(res)) {
-            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:4px 0;">No recent activity.</p>`;
-            return;
-        }
-        if (!res.length) {
-            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:4px 0;">No recent activity yet.</p>`;
-            return;
-        }
-        const recent = res.slice(0, 5);
-        container.innerHTML = recent.map(l => {
-            const date = new Date(l.timestamp).toLocaleString('en-GB', { hour12: false });
-            return `<div style="display:flex;gap:16px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--border-dim);">
-                <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);white-space:nowrap;">${date}</span>
-                <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent-bright);white-space:nowrap;">${l.username}</span>
-                <span style="font-size:13px;color:var(--text-secondary);">${l.action}</span>
-            </div>`;
-        }).join('') + `<div style="padding-top:12px;"><button class="nav-link" style="padding:0;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--accent);" onclick="app.navigate('logs')">VIEW ALL LOGS →</button></div>`;
-    },
-
-    async savePlayer() {
-        const body = {
-            uuid: document.getElementById('val-uuid').value || document.getElementById('val-uuid').innerText,
-            name: document.getElementById('val-name').innerText,
-            coins: document.getElementById('inp-coins').value,
-            level: document.getElementById('inp-level').value
-        };
-        const res = await this.req('update', 'POST', body);
-        if (res.error) this.toast(res.error, "error");
-        else {
-            this.toast("Player record updated.");
-            document.getElementById('player-edit-panel').style.display = 'none';
-            this.loadPlayerDetail(); // refresh the whole profile
-            this.loadLogs();
-            this.loadStats();
-        }
-    },
-
-    async loadStaff() {
-        const res = await this.req('staff_list');
-        if (res.error) return;
-
-        let html = `<table class="data-table">
-            <thead><tr><th>ID</th><th>Username</th><th>Access Level</th></tr></thead><tbody>`;
-
-        res.forEach(s => {
-            html += `<tr>
-                <td class="mono" style="color:var(--text-dim);">#${s.id}</td>
-                <td class="bold">${s.username}</td>
-                <td><span class="badge ${s.role}">${s.role}</span></td>
-            </tr>`;
-        });
-
-        html += `</tbody></table>`;
-        document.getElementById('staff-table-container').innerHTML = html;
-    },
-
-    async loadLogs() {
-        const res = await this.req('logs');
-        const container = document.getElementById('logs-table-container');
-
-        if (res.error) {
-            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
-            return this.toast("Logs: " + res.error, "error");
-        }
-
-        let html = `<table class="data-table">
-            <thead><tr><th>Timestamp</th><th>Staff Member</th><th>Action</th></tr></thead><tbody>`;
-
-        if (res.length === 0) {
-            html += `<tr><td colspan="3" style="text-align:center;padding:32px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No entries found</td></tr>`;
-        } else {
-            res.forEach(l => {
-                const date = new Date(l.timestamp).toLocaleString('en-GB', { hour12: false });
-                html += `<tr>
-                    <td class="mono" style="color:var(--text-dim);white-space:nowrap;">${date}</td>
-                    <td class="bold mono" style="color:var(--accent-bright);">${l.username}</td>
-                    <td style="color:var(--text-secondary);">${l.action}</td>
-                </tr>`;
+                body: JSON.stringify(payload)
             });
+
+            if (!r.ok) return res.status(400).json({ error: `Webhook returned ${r.status}` });
+            return res.json({ success: true });
         }
 
-        html += `</tbody></table>`;
-        container.innerHTML = html;
-    },
-
-    // ════ PLAYER DATABASE ════
-    _playerData: null,
-    _autocompleteTimer: null,
-    _autocompleteIndex: -1,
-    _playerChart: null,
-
-    async playerSearchInput(val) {
-        clearTimeout(this._autocompleteTimer);
-        const box = document.getElementById('p-autocomplete');
-        if (!val || val.length < 1) { box.style.display = 'none'; return; }
-        this._autocompleteTimer = setTimeout(async () => {
-            const res = await this.req(`player_autocomplete&q=${encodeURIComponent(val)}`);
-            if (!res || res.error || !res.length) { box.style.display = 'none'; return; }
-            this._autocompleteIndex = -1;
-            box.style.display = 'block';
-            box.innerHTML = res.map((p, i) => {
-                const playtime = this.fmtDuration(p.total_playtime_s);
-                const lastSeen = p.last_seen ? new Date(p.last_seen).toLocaleDateString('en-GB') : 'Never';
-                return `<div class="autocomplete-item" data-index="${i}" data-name="${p.name}"
-                    onmousedown="app.selectAutocomplete('${p.name}')"
-                    style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;transition:background 0.1s;border-bottom:1px solid var(--border-dim);">
-                    <img src="https://crafatar.com/avatars/${p.uuid}?size=32&overlay" style="width:28px;height:28px;image-rendering:pixelated;border-radius:2px;" onerror="this.style.display='none'">
-                    <div style="flex:1;">
-                        <div style="font-weight:700;font-size:13px;">${p.name}</div>
-                        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">Lv.${p.level} · ${this.fmtCoins(p.coins)} ◎ · ${playtime}</div>
-                    </div>
-                    <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">${lastSeen}</span>
-                </div>`;
-            }).join('');
-        }, 150);
-    },
-
-    playerSearchKeydown(e) {
-        const box = document.getElementById('p-autocomplete');
-        const items = box.querySelectorAll('.autocomplete-item');
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            this._autocompleteIndex = Math.min(this._autocompleteIndex + 1, items.length - 1);
-            items.forEach((el, i) => el.style.background = i === this._autocompleteIndex ? 'var(--bg-hover)' : '');
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            this._autocompleteIndex = Math.max(this._autocompleteIndex - 1, 0);
-            items.forEach((el, i) => el.style.background = i === this._autocompleteIndex ? 'var(--bg-hover)' : '');
-        } else if (e.key === 'Enter') {
-            if (this._autocompleteIndex >= 0 && items[this._autocompleteIndex]) {
-                this.selectAutocomplete(items[this._autocompleteIndex].dataset.name);
-            } else {
-                this.loadPlayerDetail();
-            }
-        } else if (e.key === 'Escape') {
-            box.style.display = 'none';
-        }
-    },
-
-    selectAutocomplete(name) {
-        document.getElementById('p-search').value = name;
-        document.getElementById('p-autocomplete').style.display = 'none';
-        this.loadPlayerDetail();
-    },
-
-    async loadPlayerDetail() {
-        const q = document.getElementById('p-search').value.trim();
-        if (!q) return;
-        document.getElementById('p-autocomplete').style.display = 'none';
-
-        // Show loading state
-        const profile = document.getElementById('player-profile');
-        profile.style.display = 'block';
-        document.getElementById('player-name-hero').innerText = 'Loading...';
-        document.getElementById('player-stat-grid').innerHTML = '';
-
-        const res = await this.req('player_detail', 'POST', { query: q });
-        if (res.error) {
-            this.toast(res.error, 'error');
-            profile.style.display = 'none';
-            return;
-        }
-
-        this._playerData = res;
-        this.renderPlayerDetail(res);
-    },
-
-    renderPlayerDetail(data) {
-        const { player, stats, snapshots, sessions, punishments, ip_history, alt_accounts, security_alerts } = data;
-        const fmtC = this.fmtCoins.bind(this);
-        const fmtD = this.fmtDuration.bind(this);
-
-        // ── HERO ──
-        const uuid = player.uuid;
-        document.getElementById('player-face').src = `https://crafatar.com/avatars/${uuid}?size=72&overlay`;
-        document.getElementById('player-skin-full').src = `https://crafatar.com/renders/body/${uuid}?scale=6&overlay`;
-        document.getElementById('player-name-hero').innerText = player.name;
-        document.getElementById('player-uuid-hero').innerText = uuid;
-
-        // Online/ban badges
-        const onlineDot = document.getElementById('player-online-dot');
-        const onlineBadge = document.getElementById('player-online-badge');
-        const banBadge = document.getElementById('player-ban-badge');
-        onlineDot.style.display = player.is_online ? 'block' : 'none';
-        onlineBadge.style.display = player.is_online ? 'inline-block' : 'none';
-
-        const activeBan = punishments.find(p => (p.type === 'ban' || p.type === 'tempban') && p.active);
-        banBadge.style.display = activeBan ? 'inline-block' : 'none';
-
-        // First/last seen
-        const firstSeen = player.first_seen ? new Date(player.first_seen).toLocaleDateString('en-GB') : 'Unknown';
-        const lastSeen = player.last_seen ? new Date(player.last_seen).toLocaleString('en-GB', { hour12: false }) : 'Never';
-        document.getElementById('player-first-seen').innerText = `First seen: ${firstSeen}`;
-        document.getElementById('player-last-seen').innerText = `Last seen: ${lastSeen}`;
-        const daysAgoEl = document.getElementById('player-days-ago');
-        if (player.days_since_last_seen !== null) {
-            const d = player.days_since_last_seen;
-            const col = player.is_online ? 'var(--green)' : d === 0 ? 'var(--green)' : d <= 3 ? 'var(--amber)' : 'var(--text-dim)';
-            daysAgoEl.innerText = player.is_online ? '● Online now' : d === 0 ? 'Seen today' : `${d} day${d !== 1 ? 's' : ''} ago`;
-            daysAgoEl.style.color = col;
-        }
-
-        // Rank badges
-        const rankBadges = document.getElementById('player-rank-badges');
-        const badges = [];
-        if (stats.coin_percentile >= 90) badges.push({ label: `Top ${100 - stats.coin_percentile + 1}% Wealth`, col: 'var(--amber)', bg: 'var(--amber-dim)' });
-        if (stats.playtime_percentile >= 90) badges.push({ label: `Top ${100 - stats.playtime_percentile + 1}% Playtime`, col: 'var(--green)', bg: 'var(--green-dim)' });
-        if (stats.level_percentile >= 90) badges.push({ label: `Top ${100 - stats.level_percentile + 1}% Level`, col: 'var(--purple)', bg: 'var(--purple-dim)' });
-        if (Object.keys(alt_accounts).length > 0) badges.push({ label: '⚠ Possible Alts', col: 'var(--red)', bg: 'var(--red-dim)' });
-        if (security_alerts.filter(a => !a.resolved).length > 0) badges.push({ label: '🚨 Security Flags', col: 'var(--red)', bg: 'var(--red-dim)' });
-        rankBadges.innerHTML = badges.map(b =>
-            `<span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1px;background:${b.bg};color:${b.col};border:1px solid ${b.col};padding:3px 8px;border-radius:2px;">${b.label}</span>`
-        ).join('');
-
-        // ── STAT GRID ──
-        const statItems = [
-            { label: 'Coins', value: `${fmtC(player.coins)} ◎`, color: 'var(--amber)', icon: '◎' },
-            { label: 'Level', value: player.level || 1, color: 'var(--purple)', icon: '◆' },
-            { label: 'XP', value: Number(player.xp || 0).toLocaleString(), color: 'var(--accent-bright)', icon: '✦' },
-            { label: 'Playtime', value: fmtD(player.total_playtime_s), color: 'var(--green)', icon: '⧗' },
-            { label: 'Sessions', value: Number(player.session_count || 0).toLocaleString(), color: 'var(--text-primary)', icon: '◈' },
-            { label: 'Coins/Hour', value: `${fmtC(stats.coins_per_hour)} ◎`, color: 'var(--amber)', icon: '⚡' },
-            { label: 'Avg Session', value: fmtD(stats.avg_session_s), color: 'var(--text-primary)', icon: '⊙' },
-            { label: 'Punishments', value: punishments.length, color: punishments.length > 0 ? 'var(--red)' : 'var(--green)', icon: '⊘' },
-        ];
-        document.getElementById('player-stat-grid').innerHTML = statItems.map(s =>
-            `<div style="background:var(--bg-panel);border:1px solid var(--border-dim);border-radius:4px;padding:16px;position:relative;overflow:hidden;">
-                <div style="position:absolute;top:12px;right:14px;font-size:20px;color:${s.color};opacity:0.15;">${s.icon}</div>
-                <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">${s.label}</span>
-                <div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:${s.color};">${s.value}</div>
-            </div>`
-        ).join('');
-
-        // ── WEALTH ANALYSIS ──
-        const wealthEl = document.getElementById('player-wealth-analysis');
-        const vsAvg = player.coins - stats.server_avg_coins;
-        const vsAvgPct = stats.server_avg_coins > 0 ? Math.round((vsAvg / stats.server_avg_coins) * 100) : 0;
-        wealthEl.innerHTML = [
-            { label: 'vs Server Avg', value: `${vsAvg >= 0 ? '+' : ''}${fmtC(vsAvg)} ◎`, color: vsAvg >= 0 ? 'var(--green)' : 'var(--red)' },
-            { label: 'vs Avg (%)', value: `${vsAvgPct >= 0 ? '+' : ''}${vsAvgPct}%`, color: vsAvgPct >= 0 ? 'var(--green)' : 'var(--red)' },
-            { label: 'Server Avg Coins', value: `${fmtC(stats.server_avg_coins)} ◎`, color: 'var(--text-secondary)' },
-            { label: '7-Day Trend', value: stats.wealth_trend_pct !== null ? `${stats.wealth_trend_pct >= 0 ? '+' : ''}${stats.wealth_trend_pct}%` : 'No data', color: stats.wealth_trend_pct > 0 ? 'var(--green)' : stats.wealth_trend_pct < 0 ? 'var(--red)' : 'var(--text-dim)' },
-        ].map(r => `<div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${r.label}</span>
-            <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:${r.color};">${r.value}</span>
-        </div>`).join('');
-
-        // Set trend in chart header
-        if (stats.wealth_trend_pct !== null) {
-            const t = stats.wealth_trend_pct;
-            document.getElementById('player-wealth-trend').innerText = `7d: ${t >= 0 ? '+' : ''}${t}%`;
-            document.getElementById('player-wealth-trend').style.color = t > 0 ? 'var(--green)' : t < 0 ? 'var(--red)' : 'var(--text-dim)';
-        }
-
-        // ── SERVER RANK ──
-        const ranksEl = document.getElementById('player-ranks');
-        const mkRank = (label, rank, total, pct) => {
-            const barW = Math.max(2, pct);
-            return `<div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                    <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${label}</span>
-                    <span style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-primary);">#${rank} <span style="color:var(--text-dim);">/ ${total}</span></span>
-                </div>
-                <div style="height:3px;background:var(--border-dim);border-radius:2px;overflow:hidden;">
-                    <div style="height:100%;width:${barW}%;background:var(--accent);border-radius:2px;transition:width 0.6s ease;"></div>
-                </div>
-            </div>`;
-        };
-        const tot = stats.total_players;
-        ranksEl.innerHTML =
-            mkRank('Coins', stats.coin_rank, tot, stats.coin_percentile) +
-            mkRank('Level', stats.level_rank, tot, stats.level_percentile) +
-            mkRank('Playtime', stats.playtime_rank, tot, stats.playtime_percentile);
-
-        // ── ACTIVITY ──
-        const actEl = document.getElementById('player-activity');
-        const vsAvgPlay = (player.total_playtime_s || 0) - stats.server_avg_playtime;
-        actEl.innerHTML = [
-            { label: 'Total Playtime', value: fmtD(player.total_playtime_s), color: 'var(--green)' },
-            { label: 'vs Server Avg', value: `${vsAvgPlay >= 0 ? '+' : ''}${fmtD(Math.abs(vsAvgPlay))}`, color: vsAvgPlay >= 0 ? 'var(--green)' : 'var(--red)' },
-            { label: 'Avg Session', value: fmtD(stats.avg_session_s), color: 'var(--text-primary)' },
-            { label: 'Total Sessions', value: Number(player.session_count || 0).toLocaleString(), color: 'var(--text-primary)' },
-        ].map(r => `<div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${r.label}</span>
-            <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:${r.color};">${r.value}</span>
-        </div>`).join('');
-
-        // ── COIN HISTORY CHART ──
-        if (this._playerChart) { this._playerChart.destroy(); this._playerChart = null; }
-        if (snapshots.length > 1) {
-            const ctx = document.getElementById('player-coin-chart').getContext('2d');
-            const grad = ctx.createLinearGradient(0, 0, 0, 160);
-            grad.addColorStop(0, 'rgba(255,184,48,0.3)');
-            grad.addColorStop(1, 'rgba(255,184,48,0)');
-            this._playerChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: snapshots.map(s => new Date(s.snapped_at).toLocaleDateString('en-GB')),
-                    datasets: [{
-                        data: snapshots.map(s => s.coins),
-                        borderColor: '#ffb830',
-                        backgroundColor: grad,
-                        borderWidth: 2,
-                        pointRadius: snapshots.length > 30 ? 0 : 3,
-                        pointBackgroundColor: '#ffb830',
-                        fill: true,
-                        tension: 0.3,
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: {
-                        backgroundColor: '#16161f', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1,
-                        titleColor: '#eeeef5', bodyColor: '#8888aa', padding: 10,
-                        titleFont: { family: 'Space Mono', size: 11 }, bodyFont: { family: 'Space Mono', size: 11 },
-                        callbacks: { label: ctx => ` ${Number(ctx.raw).toLocaleString()} ◎` }
-                    }},
-                    scales: {
-                        x: { display: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 } },
-                        y: { display: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 10 }, callback: v => fmtC(v) } }
-                    }
-                }
-            });
-        } else {
-            document.getElementById('player-coin-chart').parentElement.innerHTML =
-                `<div style="height:160px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// Not enough snapshot data yet — accumulates over time.</div>`;
-        }
-
-        // ── SESSIONS ──
-        const sessEl = document.getElementById('player-sessions-list');
-        if (!sessions.length) {
-            sessEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// No sessions logged yet.</p>`;
-        } else {
-            sessEl.innerHTML = sessions.map(s => {
-                const date = new Date(s.joined_at).toLocaleString('en-GB', { hour12: false });
-                const dur = s.duration_s ? fmtD(s.duration_s) : 'In progress';
-                const durColor = s.duration_s ? (s.duration_s > 3600 ? 'var(--green)' : 'var(--text-secondary)') : 'var(--amber)';
-                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border-dim);">
-                    <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${date}</span>
-                    <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:${durColor};">${dur}</span>
-                </div>`;
-            }).join('');
-        }
-
-        // ── PUNISHMENTS ──
-        const punEl = document.getElementById('player-punishments-list');
-        if (!punishments.length) {
-            punEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--green);">// Clean record.</p>`;
-        } else {
-            const typeCol = { ban: 'var(--red)', tempban: 'var(--purple)', warn: 'var(--amber)' };
-            punEl.innerHTML = punishments.map(p => {
-                const date = new Date(p.issued_at).toLocaleDateString('en-GB');
-                const col = typeCol[p.type] || 'var(--text-dim)';
-                return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim);">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1px;color:${col};text-transform:uppercase;">${p.type}</span>
-                        ${!p.active ? '<span style="font-family:\'Space Mono\',monospace;font-size:9px;color:var(--text-dim);">REVOKED</span>' : ''}
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);margin-left:auto;">${date}</span>
-                    </div>
-                    <div style="font-size:12px;color:var(--text-secondary);">${p.reason}</div>
-                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:2px;">by ${p.issued_by}</div>
-                </div>`;
-            }).join('');
-        }
-
-        // ── IP HISTORY ──
-        const ipEl = document.getElementById('player-ip-list');
-        if (!ip_history.length) {
-            ipEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// No IP logs yet.</p>`;
-        } else {
-            ipEl.innerHTML = ip_history.map(ip => {
-                const masked = ip.ip.replace(/(\d+\.\d+)\.\d+\.\d+/, '$1.*.*');
-                const alts = alt_accounts[ip.ip] || [];
-                const lastSeen = new Date(ip.last_seen).toLocaleDateString('en-GB');
-                return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:11px;font-weight:700;">${masked}</span>
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">${ip.times}× · ${lastSeen}</span>
-                    </div>
-                    ${alts.length ? `<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--red);">⚠ Shared with: ${alts.map(a => `<span class="player-link" onclick="app.selectAutocomplete('${a.name}')">${a.name}</span>`).join(', ')}</div>` : ''}
-                </div>`;
-            }).join('');
-        }
-
-        // ── SECURITY ALERTS ──
-        const secEl = document.getElementById('player-security-list');
-        if (!security_alerts.length) {
-            secEl.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--green);">// No security flags.</p>`;
-        } else {
-            const sevCol = { critical: 'var(--red)', high: 'var(--red)', medium: 'var(--amber)', low: 'var(--text-dim)' };
-            secEl.innerHTML = security_alerts.map(a => {
-                const date = new Date(a.created_at).toLocaleDateString('en-GB');
-                const col = sevCol[a.severity] || 'var(--text-dim)';
-                return `<div style="padding:8px 0;border-bottom:1px solid var(--border-dim);">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;color:${col};letter-spacing:1px;">${a.type}</span>
-                        ${a.resolved ? '<span style="font-family:\'Space Mono\',monospace;font-size:9px;color:var(--green);">RESOLVED</span>' : ''}
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);margin-left:auto;">${date}</span>
-                    </div>
-                    <div style="font-size:11px;color:var(--text-secondary);font-family:'Space Mono',monospace;line-height:1.5;">${a.detail}</div>
-                </div>`;
-            }).join('');
-        }
-
-        // ── POPULATE EDIT FORM ──
-        document.getElementById('val-uuid').value = player.uuid;
-        document.getElementById('val-name').innerText = player.name;
-        document.getElementById('inp-coins').value = player.coins || 0;
-        document.getElementById('inp-level').value = player.level || 1;
-    },
-
-    showPlayerEdit() {
-        const panel = document.getElementById('player-edit-panel');
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-        if (panel.style.display === 'block') panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    },
-
-    // Keep lookupPlayer for backward compat (used by modal)
-    async lookupPlayer() {
-        const q = document.getElementById('p-search').value.trim();
-        if (!q) return;
-        const res = await this.req('lookup', 'POST', { query: q });
-        if (res.error) return this.toast(res.error, 'error');
-        document.getElementById('val-name').innerText = res.name;
-        document.getElementById('val-uuid').value = res.uuid;
-        document.getElementById('inp-coins').value = res.coins;
-        document.getElementById('inp-level').value = res.level;
-    },
-
-    // ── ONLINE PLAYERS ──
-    _playersInterval: null,
-
-    async loadOnlinePlayers() {
-        const res = await this.req('online_players');
-        const container = document.getElementById('online-players-container');
-        const badge = document.getElementById('online-count-badge');
-
-        if (res.error) {
-            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
-            return;
-        }
-
-        const players = res || [];
-        badge.innerText = `${players.length} ONLINE`;
-
-        if (players.length === 0) {
-            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No players online.</p>`;
-            return;
-        }
-
-        container.innerHTML = players.map(p => `
-            <div class="player-row">
-                <div class="player-avatar-sm">${p.name.charAt(0).toUpperCase()}</div>
-                <span class="player-row-name">${p.name}</span>
-                <span class="player-row-meta" style="color:var(--text-dim);">${p.uuid ? p.uuid.substring(0,8) + '...' : ''}</span>
-                <span class="player-row-meta">Lv.${p.level || '?'}</span>
-                <span class="player-row-meta text-gold">${Number(p.coins || 0).toLocaleString()} ◎</span>
-                <div class="player-row-actions">
-                    <button class="btn-sm" onclick="app.quickBan('${p.name}')">BAN</button>
-                    <button class="btn-sm" onclick="app.quickWarn('${p.name}')">WARN</button>
-                </div>
-            </div>
-        `).join('');
-    },
-
-    startPlayerPolling() {
-        this.loadOnlinePlayers();
-        if (this._playersInterval) clearInterval(this._playersInterval);
-        this._playersInterval = setInterval(() => this.loadOnlinePlayers(), 15000);
-    },
-
-    quickBan(name) {
-        document.getElementById('ban-target').value = name;
-        document.getElementById('ban-type').value = 'ban';
-        this.navigate('bans');
-        document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
-    },
-
-    quickWarn(name) {
-        document.getElementById('ban-target').value = name;
-        document.getElementById('ban-type').value = 'warn';
-        this.navigate('bans');
-        document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
-    },
-
-    toggleDuration() {
-        const type = document.getElementById('ban-type').value;
-        const group = document.getElementById('duration-group');
-        group.style.opacity = type === 'tempban' ? '1' : '0.3';
-        group.style.pointerEvents = type === 'tempban' ? 'auto' : 'none';
-    },
-
-    // ── BANS & WARNINGS ──
-    async issuePunishment() {
-        const target = document.getElementById('ban-target').value.trim();
-        const type = document.getElementById('ban-type').value;
-        const reason = document.getElementById('ban-reason').value.trim();
-        const duration = document.getElementById('ban-duration').value.trim();
-
-        if (!target || !reason) return this.toast("Player name and reason required.", "error");
-
-        const res = await this.req('punish', 'POST', { target, type, reason, duration });
-        if (res.error) return this.toast(res.error, "error");
-
-        this.toast(`${type.toUpperCase()} issued to ${target}.`);
-        document.getElementById('ban-target').value = '';
-        document.getElementById('ban-reason').value = '';
-        this.loadBans();
-        this.loadLogs();
-    },
-
-    async loadBans() {
-        const res = await this.req('bans_list');
-        const container = document.getElementById('bans-table-container');
-
-        if (res.error) {
-            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
-            return;
-        }
-
-        if (!res.length) {
-            container.innerHTML = `<p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No active punishments.</p>`;
-            return;
-        }
-
-        let html = `<table class="data-table">
-            <thead><tr><th>Player</th><th>Type</th><th>Reason</th><th>Issued By</th><th>Date</th><th></th></tr></thead><tbody>`;
-
-        res.forEach(b => {
-            const date = new Date(b.issued_at).toLocaleDateString('en-GB');
-            const typeClass = `ptype-${b.type}`;
-            const label = b.type === 'tempban' ? `TEMP BAN${b.duration ? ' · ' + b.duration : ''}` : b.type.toUpperCase();
-            html += `<tr>
-                <td class="bold">${b.target_name}</td>
-                <td><span class="${typeClass}">${label}</span></td>
-                <td style="color:var(--text-secondary);max-width:260px;">${b.reason}</td>
-                <td class="mono" style="color:var(--accent-bright);">${b.issued_by}</td>
-                <td class="mono" style="color:var(--text-dim);">${date}</td>
-                <td><button class="btn-sm" onclick="app.revokePunishment(${b.id})">REVOKE</button></td>
-            </tr>`;
-        });
-
-        html += `</tbody></table>`;
-        container.innerHTML = html;
-    },
-
-    async revokePunishment(id) {
-        const res = await this.req('revoke', 'POST', { id });
-        if (res.error) return this.toast(res.error, "error");
-        this.toast("Punishment revoked.");
-        this.loadBans();
-        this.loadLogs();
-    },
-
-    // ── SERVER CONSOLE ──
-    _cmdHistory: [],
-    _historyIndex: -1,
-
-    consoleLog(text, cls = '') {
-        const out = document.getElementById('console-output');
-        if (!out) return;
-        const line = document.createElement('div');
-        line.className = cls;
-        line.innerHTML = text;
-        out.appendChild(line);
-        out.scrollTop = out.scrollHeight;
-    },
-
-    initConsole() {
-        const output = document.getElementById('console-output');
-        output.innerHTML = '';
-        this.consoleLog(`<span class="con-prompt">brume@server</span><span class="con-dim">:~$</span> <span class="con-dim">// Console ready. Commands run via RCON.</span>`);
-
-        // Arrow key history navigation
-        const input = document.getElementById('console-input');
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (this._historyIndex < this._cmdHistory.length - 1) {
-                    this._historyIndex++;
-                    input.value = this._cmdHistory[this._cmdHistory.length - 1 - this._historyIndex];
-                }
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (this._historyIndex > 0) {
-                    this._historyIndex--;
-                    input.value = this._cmdHistory[this._cmdHistory.length - 1 - this._historyIndex];
-                } else {
-                    this._historyIndex = -1;
-                    input.value = '';
-                }
-            }
-        });
-    },
-
-    async runCommand() {
-        const input = document.getElementById('console-input');
-        const cmd = input.value.trim();
-        if (!cmd) return;
-
-        this._cmdHistory.push(cmd);
-        this._historyIndex = -1;
-        input.value = '';
-
-        this.consoleLog(`<span class="con-prompt">brume@server</span><span class="con-dim">:~$</span> <span class="con-line-cmd">${this.escapeHtml(cmd)}</span>`);
-
-        const res = await this.req('console', 'POST', { command: cmd });
-
-        if (res.error) {
-            this.consoleLog(`<span class="con-line-err">✗ ${this.escapeHtml(res.error)}</span>`);
-        } else {
-            const lines = (res.output || '').split('\n');
-            lines.forEach(line => {
-                const cls = line.startsWith('[ERROR]') ? 'con-line-err'
-                          : line.startsWith('[WARN]')  ? 'con-line-info'
-                          : 'con-line-ok';
-                this.consoleLog(`<span class="${cls}">${this.escapeHtml(line)}</span>`);
-            });
-        }
-    },
-
-    clearConsole() {
-        const out = document.getElementById('console-output');
-        out.innerHTML = '';
-        this.consoleLog(`<span class="con-dim">// Console cleared.</span>`);
-    },
-
-    escapeHtml(str) {
-        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    },
-
-    // ════ ANALYTICS ════
-    _analyticsDays: 7,
-    _charts: {},
-
-    setAnalyticsRange(days, btn) {
-        this._analyticsDays = days;
-        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.loadAnalytics();
-    },
-
-    fmtDuration(seconds) {
-        if (!seconds || seconds < 60) return `${Math.round(seconds || 0)}s`;
-        if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-        return `${(seconds / 3600).toFixed(1)}h`;
-    },
-
-    fmtCoins(n) {
-        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-        if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-        return Math.round(n).toLocaleString();
-    },
-
-    destroyChart(id) {
-        if (this._charts[id]) { this._charts[id].destroy(); delete this._charts[id]; }
-    },
-
-    chartDefaults() {
-        return {
-            color: '#8888aa',
-            borderColor: 'rgba(255,255,255,0.06)',
-            plugins: { legend: { display: false }, tooltip: {
-                backgroundColor: '#16161f',
-                borderColor: 'rgba(255,255,255,0.12)',
-                borderWidth: 1,
-                titleColor: '#eeeef5',
-                bodyColor: '#8888aa',
-                padding: 12,
-                titleFont: { family: 'Space Mono', size: 12 },
-                bodyFont: { family: 'Space Mono', size: 12 },
-            }},
-            scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 8 } },
-                y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 6 } }
-            }
-        };
-    },
-
-    async loadAnalytics() {
-        const [ecoRes, heatRes, retRes, lbRes] = await Promise.all([
-            this.req(`analytics_economy&days=${this._analyticsDays}`),
-            this.req('analytics_heatmap'),
-            this.req('analytics_retention'),
-            this.req('analytics_leaderboard'),
-        ]);
-
-        if (!ecoRes.error) this.renderEcoChart(ecoRes);
-        if (!heatRes.error) this.renderHeatmap(heatRes);
-        if (!retRes.error) this.renderRetention(retRes);
-        if (!lbRes.error) this.renderLeaderboards(lbRes);
-
-        // Also load overview mini-chart
-        if (!ecoRes.error) this.renderOverviewEcoChart(ecoRes);
-        if (!retRes.error) this.renderOverviewWeekStats(retRes);
-    },
-
-    renderEcoChart(data) {
-        this.destroyChart('eco');
-        const snaps = data.snapshots || [];
-        const peak  = data.peak || {};
-
-        // KPIs
-        document.getElementById('a-peak-eco').innerText = this.fmtCoins(peak.peak_coins || 0) + ' ◎';
-
-        // Growth — find first non-zero snapshot to compare against
-        const firstNonZero = snaps.find(s => s.total_coins > 0);
-        const lastSnap = snaps[snaps.length - 1];
-        if (firstNonZero && lastSnap && firstNonZero !== lastSnap) {
-            const pct = (((lastSnap.total_coins - firstNonZero.total_coins) / firstNonZero.total_coins) * 100).toFixed(1);
-            const el = document.getElementById('a-eco-growth');
-            el.innerText = (parseFloat(pct) >= 0 ? '+' : '') + pct + '%';
-            el.style.color = parseFloat(pct) >= 0 ? 'var(--green)' : 'var(--red)';
-        } else if (snaps.length > 0) {
-            document.getElementById('a-eco-growth').innerText = 'No change';
-        }
-
-        // ── Anomaly detection ──
-        // Flag any snapshot where coins changed by >20% vs previous
-        const anomalies = [];
-        for (let i = 1; i < snaps.length; i++) {
-            const prev = snaps[i - 1].total_coins;
-            const curr = snaps[i].total_coins;
-            if (prev > 0) {
-                const change = ((curr - prev) / prev) * 100;
-                if (Math.abs(change) >= 20) {
-                    anomalies.push({ index: i, change, snap: snaps[i] });
-                }
-            }
-        }
-
-        const badge = document.getElementById('eco-anomaly-badge');
-        badge.style.display = anomalies.length ? 'inline-block' : 'none';
-
-        const annoEl = document.getElementById('eco-annotations');
-        annoEl.innerHTML = anomalies.map(a => {
-            const d = new Date(a.snap.hour).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
-            const col = a.change > 0 ? 'var(--amber)' : 'var(--red)';
-            const sign = a.change > 0 ? '+' : '';
-            return `<span style="font-family:'Space Mono',monospace;font-size:10px;background:var(--bg-raised);border:1px solid var(--border-mid);padding:4px 10px;border-radius:2px;color:${col};">
-                ⚠ ${d} — ${sign}${a.change.toFixed(1)}% (${this.fmtCoins(a.snap.total_coins)} ◎)
-            </span>`;
-        }).join('');
-
-        const labels = snaps.map(s => {
-            const d = new Date(s.hour);
-            return this._analyticsDays <= 7
-                ? d.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
-                : d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-        });
-
-        const ctx = document.getElementById('eco-chart').getContext('2d');
-        const grad = ctx.createLinearGradient(0, 0, 0, 340);
-        grad.addColorStop(0, 'rgba(91,106,255,0.3)');
-        grad.addColorStop(1, 'rgba(91,106,255,0)');
-
-        // Anomaly point colors
-        const pointColors = snaps.map((_, i) =>
-            anomalies.find(a => a.index === i) ? '#ff4757' : '#5b6aff'
-        );
-        const pointSizes = snaps.map((_, i) =>
-            anomalies.find(a => a.index === i) ? 7 : (snaps.length > 60 ? 0 : 4)
-        );
-
-        this._charts['eco'] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    {
-                        label: 'Total Coins',
-                        data: snaps.map(s => Math.max(0, s.total_coins)), // clamp negatives
-                        borderColor: '#5b6aff',
-                        backgroundColor: grad,
-                        borderWidth: 2.5,
-                        pointRadius: pointSizes,
-                        pointBackgroundColor: pointColors,
-                        fill: true,
-                        tension: 0.3,
-                        yAxisID: 'y',
-                    },
-                    {
-                        label: 'Online Players',
-                        data: snaps.map(s => s.online_count ?? null),
-                        borderColor: '#00e5a0',
-                        backgroundColor: 'transparent',
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        borderDash: [5, 5],
-                        tension: 0.3,
-                        yAxisID: 'y2',
-                        spanGaps: true,
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#16161f',
-                        borderColor: 'rgba(255,255,255,0.12)',
-                        borderWidth: 1,
-                        titleColor: '#eeeef5',
-                        bodyColor: '#8888aa',
-                        padding: 14,
-                        titleFont: { family: 'Space Mono', size: 12 },
-                        bodyFont: { family: 'Space Mono', size: 12 },
-                        callbacks: {
-                            label: ctx => {
-                                if (ctx.datasetIndex === 0) return ` Coins: ${Number(ctx.raw).toLocaleString()} ◎`;
-                                return ctx.raw != null ? ` Online: ${ctx.raw}` : ` Online: no data`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.04)' },
-                        ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, maxTicksLimit: 10 }
-                    },
-                    y: {
-                        position: 'left',
-                        grid: { color: 'rgba(255,255,255,0.06)' },
-                        ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 12 }, callback: v => this.fmtCoins(v) + ' ◎' }
-                    },
-                    y2: {
-                        position: 'right',
-                        grid: { drawOnChartArea: false },
-                        ticks: { color: '#00e5a0', font: { family: 'Space Mono', size: 12 } }
-                    }
-                }
-            }
-        });
-    },
-
-    renderOverviewEcoChart(data) {
-        this.destroyChart('ov-eco');
-        const snaps = (data.snapshots || []).filter(s => s.total_coins > 0).slice(-24);
-        if (!snaps.length) return;
-        const ctx = document.getElementById('overview-eco-chart');
-        if (!ctx) return;
-        const grad = ctx.getContext('2d').createLinearGradient(0, 0, 0, 80);
-        grad.addColorStop(0, 'rgba(91,106,255,0.2)');
-        grad.addColorStop(1, 'rgba(91,106,255,0)');
-        this._charts['ov-eco'] = new Chart(ctx, {
-            type: 'line',
-            data: { labels: snaps.map(() => ''), datasets: [{ data: snaps.map(s => s.total_coins), borderColor: '#5b6aff', backgroundColor: grad, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4 }] },
-            options: { animation: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } } }
-        });
-    },
-
-    renderOverviewWeekStats(data) {
-        const rows = data || [];
-        const last = rows[rows.length - 1];
-        if (!last) return;
-        document.getElementById('ov-new').innerText = last.new_players || 0;
-        document.getElementById('ov-ret').innerText = last.returning_players || 0;
-        // ov-sessions and ov-avg-session are set separately from leaderboard totals
-    },
-
-    renderRetention(data) {
-        this.destroyChart('ret');
-        const rows = data || [];
-
-        // Total sessions KPI is set by renderLeaderboards from totals.total_sessions
-        // Here we just render the chart
-
-        const labels = rows.map(r => {
-            const d = new Date(r.week_start);
-            return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-        });
-
-        const ctx = document.getElementById('retention-chart').getContext('2d');
-        this._charts['ret'] = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [
-                    { label: 'New',       data: rows.map(r => r.new_players),       backgroundColor: 'rgba(0,229,160,0.7)',   borderRadius: 2 },
-                    { label: 'Returning', data: rows.map(r => r.returning_players), backgroundColor: 'rgba(91,106,255,0.7)',  borderRadius: 2 }
-                ]
-            },
-            options: {
-                ...this.chartDefaults(),
-                plugins: {
-                    ...this.chartDefaults().plugins,
-                    legend: { display: true, labels: { color: '#8888aa', font: { family: 'Space Mono', size: 12 }, boxWidth: 12 } }
-                },
-                scales: {
-                    x: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 } } },
-                    y: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#44445a', font: { family: 'Space Mono', size: 10 } } }
-                }
-            }
-        });
-    },
-
-    renderHeatmap(data) {
-        const DAYS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2,'0')}h`);
-
-        // Build lookup grid
-        const grid = {};
-        let maxVal = 0;
-        data.forEach(r => {
-            grid[`${r.day_of_week}_${r.hour_of_day}`] = r.session_count;
-            if (r.session_count > maxVal) maxVal = r.session_count;
-        });
-
-        const cellSize = 24;
-        const labelW   = 36;
-        const labelH   = 24;
-
-        let html = `<div style="overflow-x:auto;"><div style="display:inline-block;">`;
-
-        // Hour labels top
-        html += `<div style="display:flex;margin-left:${labelW}px;margin-bottom:4px;">`;
-        HOURS.forEach((h, i) => {
-            html += `<div style="width:${cellSize}px;font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);text-align:center;overflow:hidden;">${i % 3 === 0 ? h : ''}</div>`;
-        });
-        html += `</div>`;
-
-        // Rows
-        DAYS.forEach((day, di) => {
-            html += `<div style="display:flex;align-items:center;margin-bottom:3px;">`;
-            html += `<div style="width:${labelW}px;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);text-align:right;padding-right:8px;">${day}</div>`;
-            HOURS.forEach((_, hi) => {
-                const val = grid[`${di}_${hi}`] || 0;
-                const intensity = maxVal > 0 ? val / maxVal : 0;
-                const alpha  = 0.08 + intensity * 0.92;
-                const color  = `rgba(91,106,255,${alpha})`;
-                const border = intensity > 0.5 ? '1px solid rgba(91,106,255,0.4)' : '1px solid rgba(255,255,255,0.04)';
-                html += `<div title="${day} ${hi}:00 — ${val} sessions" style="width:${cellSize}px;height:${cellSize}px;background:${color};border:${border};border-radius:2px;cursor:default;"></div>`;
-            });
-            html += `</div>`;
-        });
-
-        // Legend
-        html += `<div style="display:flex;align-items:center;gap:6px;margin-top:10px;margin-left:${labelW}px;">`;
-        html += `<span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">Low</span>`;
-        [0.1,0.3,0.5,0.7,0.9].forEach(a => {
-            html += `<div style="width:18px;height:18px;background:rgba(91,106,255,${a});border-radius:2px;"></div>`;
-        });
-        html += `<span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">High</span>`;
-        html += `</div>`;
-
-        html += `</div></div>`;
-        document.getElementById('heatmap-container').innerHTML = html;
-    },
-
-    renderLeaderboards(data) {
-        const fmt = this.fmtDuration.bind(this);
-        const fmtC = this.fmtCoins.bind(this);
-
-        if (data.totals) {
-            const avgEl = document.getElementById('a-avg-session');
-            if (avgEl) avgEl.innerText = fmt(data.totals.avg_playtime_s) || '0s';
-            const sesEl = document.getElementById('a-sessions');
-            if (sesEl) sesEl.innerText = Number(data.totals.total_sessions || 0).toLocaleString();
-        }
-
-        const makeTable = (rows, cols) => {
-            if (!rows.length) return `<p style="padding:16px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">No data yet.</p>`;
-            return `<table class="data-table" style="font-size:12px;">
-                <thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
-                <tbody>${rows.map((r, i) => `<tr>
-                    <td style="color:var(--text-dim);font-family:'Space Mono',monospace;">#${i+1}</td>
-                    ${cols.slice(1).map(c => `<td ${c.style||''}>${c.fmt ? c.fmt(r[c.key], r) : r[c.key]}</td>`).join('')}
-                </tr>`).join('')}</tbody>
-            </table>`;
-        };
-
-        const nameLink = (name) => `<span class="player-link" onclick="app.openProfileModal('${name}')">${name}</span>`;
-
-        document.getElementById('lb-coins').innerHTML = makeTable(data.byCoins, [
-            { label: '#' },
-            { label: 'Player', key: 'name', fmt: v => nameLink(v) },
-            { label: 'Coins', key: 'coins', fmt: v => `<span style="color:var(--amber)">${fmtC(v)} ◎</span>` },
-            { label: 'Lv', key: 'level', style: 'style="color:var(--text-dim);"' },
-        ]);
-        document.getElementById('lb-playtime').innerHTML = makeTable(data.byPlaytime, [
-            { label: '#' },
-            { label: 'Player', key: 'name', fmt: v => nameLink(v) },
-            { label: 'Playtime', key: 'total_playtime_s', fmt: v => `<span style="color:var(--green)">${fmt(v)}</span>` },
-            { label: 'Sessions', key: 'session_count', style: 'style="color:var(--text-dim);"' },
-        ]);
-        document.getElementById('lb-level').innerHTML = makeTable(data.byLevel, [
-            { label: '#' },
-            { label: 'Player', key: 'name', fmt: v => nameLink(v) },
-            { label: 'Level', key: 'level', fmt: v => `<span style="color:var(--purple)">${v}</span>` },
-            { label: 'Coins', key: 'coins', fmt: v => fmtC(v), style: 'style="color:var(--text-dim);"' },
-        ]);
-    },
-
-    // ════ MOBILE SIDEBAR ════
-    toggleSidebar() {
-        const sidebar = document.querySelector('aside.sidebar');
-        const overlay = document.getElementById('sidebar-overlay');
-        const btn = document.querySelector('.hamburger');
-        const isOpen = sidebar.classList.contains('open');
-        if (isOpen) {
-            this.closeSidebar();
-        } else {
-            sidebar.classList.add('open');
-            overlay.classList.add('visible');
-            btn.classList.add('open');
-        }
-    },
-
-    closeSidebar() {
-        document.querySelector('aside.sidebar').classList.remove('open');
-        document.getElementById('sidebar-overlay').classList.remove('visible');
-        document.querySelector('.hamburger')?.classList.remove('open');
-    },
-    _searchTimer: null,
-    _searchFocusIndex: -1,
-
-    openSearch() {
-        const overlay = document.getElementById('search-overlay');
-        overlay.style.display = 'flex';
-        setTimeout(() => document.getElementById('search-input').focus(), 50);
-        this._searchFocusIndex = -1;
-    },
-
-    closeSearch() {
-        document.getElementById('search-overlay').style.display = 'none';
-        document.getElementById('search-input').value = '';
-        document.getElementById('search-results').innerHTML = '<div style="padding:24px;text-align:center;font-family:\'Space Mono\',monospace;font-size:12px;color:var(--text-dim);">// Start typing to search...</div>';
-    },
-
-    searchKeydown(e) {
-        const items = document.querySelectorAll('.search-result-item');
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            this._searchFocusIndex = Math.min(this._searchFocusIndex + 1, items.length - 1);
-            items.forEach((el, i) => el.classList.toggle('focused', i === this._searchFocusIndex));
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            this._searchFocusIndex = Math.max(this._searchFocusIndex - 1, 0);
-            items.forEach((el, i) => el.classList.toggle('focused', i === this._searchFocusIndex));
-        } else if (e.key === 'Enter' && this._searchFocusIndex >= 0) {
-            items[this._searchFocusIndex]?.click();
-        }
-    },
-
-    doSearch(q) {
-        clearTimeout(this._searchTimer);
-        if (!q || q.length < 2) return;
-        this._searchTimer = setTimeout(() => this._execSearch(q), 250);
-    },
-
-    async _execSearch(q) {
-        const res = await this.req('search', 'POST', { query: q });
-        if (res.error) return;
-
-        const el = document.getElementById('search-results');
-        let html = '';
-
-        if (res.players?.length) {
-            html += `<div class="search-result-group"><div class="search-result-label">Players</div>`;
-            res.players.forEach(p => {
-                html += `<div class="search-result-item" onclick="app.closeSearch();app.openProfileModal('${p.name}')">
-                    <div class="search-result-icon" style="color:var(--accent-bright);font-weight:700;">${p.name.charAt(0).toUpperCase()}</div>
-                    <div><div class="search-result-name">${p.name}</div>
-                    <div class="search-result-meta">Lv.${p.level} — ${Number(p.coins).toLocaleString()} ◎</div></div>
-                </div>`;
-            });
-            html += `</div>`;
-        }
-
-        if (res.punishments?.length) {
-            html += `<div class="search-result-group"><div class="search-result-label">Punishments</div>`;
-            res.punishments.forEach(p => {
-                const typeClass = `ptype-${p.type}`;
-                html += `<div class="search-result-item" onclick="app.closeSearch();app.navigate('bans')">
-                    <div class="search-result-icon" style="color:var(--red);">⊘</div>
-                    <div><div class="search-result-name">${p.target_name} <span class="${typeClass}" style="margin-left:6px;">${p.type.toUpperCase()}</span></div>
-                    <div class="search-result-meta">${p.reason} — by ${p.issued_by}</div></div>
-                </div>`;
-            });
-            html += `</div>`;
-        }
-
-        if (res.logs?.length) {
-            html += `<div class="search-result-group"><div class="search-result-label">Audit Logs</div>`;
-            res.logs.forEach(l => {
-                const date = new Date(l.timestamp).toLocaleDateString('en-GB');
-                html += `<div class="search-result-item" onclick="app.closeSearch();app.navigate('logs')">
-                    <div class="search-result-icon" style="color:var(--text-dim);">≡</div>
-                    <div><div class="search-result-name">${l.action}</div>
-                    <div class="search-result-meta">${l.username} — ${date}</div></div>
-                </div>`;
-            });
-            html += `</div>`;
-        }
-
-        if (!html) html = `<div style="padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No results for "${q}"</div>`;
-        el.innerHTML = html;
-        this._searchFocusIndex = -1;
-    },
-
-    // ════ PLAYER PROFILE MODAL ════
-    _modalChart: null,
-
-    playerLink(name) {
-        return `<span class="player-link" onclick="app.openProfileModal('${name}')">${name}</span>`;
-    },
-
-    async openProfileModal(name) {
-        const modal = document.getElementById('profile-modal');
-        modal.style.display = 'flex';
-
-        // Reset
-        document.getElementById('modal-name').innerText = name;
-        document.getElementById('modal-avatar').innerText = name.charAt(0).toUpperCase();
-        document.getElementById('modal-uuid').innerText = 'Loading...';
-        document.getElementById('modal-coins').innerText = '—';
-        document.getElementById('modal-level').innerText = '—';
-        document.getElementById('modal-playtime').innerText = '—';
-        document.getElementById('modal-sessions').innerText = '—';
-        document.getElementById('modal-punishments').innerHTML = 'Loading...';
-        document.getElementById('modal-sessions-list').innerHTML = 'Loading...';
-
-        const [playerRes, historyRes, punishRes, sessionRes] = await Promise.all([
-            this.req('lookup', 'POST', { query: name }),
-            this.req(`analytics_player&uuid=lookup&name=${encodeURIComponent(name)}`),
-            this.req('player_punishments', 'POST', { name }),
-            this.req('player_sessions', 'POST', { name }),
-        ]);
-
-        if (playerRes.error) {
-            document.getElementById('modal-uuid').innerText = 'Player not found';
-            return;
-        }
-
-        document.getElementById('modal-uuid').innerText = playerRes.uuid;
-        document.getElementById('modal-coins').innerText = Number(playerRes.coins || 0).toLocaleString() + ' ◎';
-        document.getElementById('modal-level').innerText = playerRes.level || 1;
-        document.getElementById('modal-playtime').innerText = this.fmtDuration(playerRes.total_playtime_s);
-        document.getElementById('modal-sessions').innerText = playerRes.session_count || 0;
-
-        // Online badge
-        const badge = document.getElementById('modal-status-badge');
-        badge.innerHTML = playerRes.online
-            ? `<span style="font-family:'Space Mono',monospace;font-size:9px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,229,160,0.3);padding:2px 8px;border-radius:2px;letter-spacing:1px;"><span class="status-dot" style="width:5px;height:5px;margin-right:4px;"></span>ONLINE</span>`
-            : `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">OFFLINE</span>`;
-
-        // Store for quick action buttons
-        this._modalPlayer = playerRes;
-
-        // Coin history chart
-        if (this._modalChart) { this._modalChart.destroy(); this._modalChart = null; }
-        if (historyRes && !historyRes.error && historyRes.length > 1) {
-            const ctx = document.getElementById('modal-chart').getContext('2d');
-            const grad = ctx.createLinearGradient(0, 0, 0, 120);
-            grad.addColorStop(0, 'rgba(255,184,48,0.25)');
-            grad.addColorStop(1, 'rgba(255,184,48,0)');
-            this._modalChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: historyRes.map(r => new Date(r.snapped_at).toLocaleDateString('en-GB')),
-                    datasets: [{ data: historyRes.map(r => r.coins), borderColor: '#ffb830', backgroundColor: grad, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: true } }, scales: { x: { display: false }, y: { display: true, ticks: { color: '#6666aa', font: { family: 'Space Mono', size: 10 }, callback: v => this.fmtCoins(v) }, grid: { color: 'rgba(255,255,255,0.04)' } } } }
-            });
-        } else {
-            document.getElementById('modal-chart').parentElement.innerHTML = `<div style="height:120px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">// Not enough history yet</div>`;
-        }
-
-        // Punishments
-        const pList = document.getElementById('modal-punishments');
-        if (!punishRes || punishRes.error || !punishRes.length) {
-            pList.innerHTML = `<span style="color:var(--green);">// Clean record</span>`;
-        } else {
-            pList.innerHTML = punishRes.map(p => {
-                const d = new Date(p.issued_at).toLocaleDateString('en-GB');
-                const col = p.type === 'ban' ? 'var(--red)' : p.type === 'tempban' ? 'var(--purple)' : 'var(--amber)';
-                return `<div style="padding:6px 0;border-bottom:1px solid var(--border-dim);">
-                    <span style="color:${col};text-transform:uppercase;letter-spacing:1px;">${p.type}</span>
-                    <span style="color:var(--text-dim);margin:0 6px;">·</span>${p.reason}
-                    <div style="color:var(--text-dim);font-size:10px;margin-top:2px;">${d} by ${p.issued_by}</div>
-                </div>`;
-            }).join('');
-        }
-
-        // Recent sessions
-        const sList = document.getElementById('modal-sessions-list');
-        if (!sessionRes || sessionRes.error || !sessionRes.length) {
-            sList.innerHTML = `<span style="color:var(--text-dim);">// No sessions logged yet</span>`;
-        } else {
-            sList.innerHTML = sessionRes.slice(0, 8).map(s => {
-                const d = new Date(s.joined_at).toLocaleDateString('en-GB');
-                const dur = this.fmtDuration(s.duration_s);
-                return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border-dim);">
-                    <span style="color:var(--text-secondary);">${d}</span>
-                    <span style="color:var(--green);">${dur}</span>
-                </div>`;
-            }).join('');
-        }
-    },
-
-    closeProfileModal() {
-        document.getElementById('profile-modal').style.display = 'none';
-        if (this._modalChart) { this._modalChart.destroy(); this._modalChart = null; }
-    },
-
-    modalEditPlayer() {
-        if (!this._modalPlayer) return;
-        this.closeProfileModal();
-        document.getElementById('p-search').value = this._modalPlayer.name;
-        this.navigate('player');
-        this.lookupPlayer();
-    },
-
-    modalBanPlayer() {
-        if (!this._modalPlayer) return;
-        this.closeProfileModal();
-        document.getElementById('ban-target').value = this._modalPlayer.name;
-        document.getElementById('ban-type').value = 'ban';
-        this.navigate('bans');
-    },
-
-    // ════ STAFF MANAGEMENT ════
-    async loadStaff() {
-        const res = await this.req('staff_list');
-        if (res.error) return;
-
-        let html = `<table class="data-table">
-            <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Actions</th></tr></thead><tbody>`;
-
-        res.forEach(s => {
-            const isSelf = s.username === this.session.user.username;
-            html += `<tr>
-                <td class="mono" style="color:var(--text-dim);">#${s.id}</td>
-                <td style="font-weight:600;">${s.username}${isSelf ? ' <span style="font-family:\'Space Mono\',monospace;font-size:9px;color:var(--accent);background:var(--accent-glow);padding:2px 6px;border-radius:2px;">YOU</span>' : ''}</td>
-                <td><span class="badge ${s.role}">${s.role}</span></td>
-                <td>
-                    <div style="display:flex;gap:6px;">
-                        <select onchange="app.changeStaffRole(${s.id},'${s.username}',this.value)" style="background:var(--bg-base);border:1px solid var(--border-dim);color:var(--text-secondary);padding:4px 8px;border-radius:2px;font-family:'Space Mono',monospace;font-size:10px;width:auto;" ${isSelf ? 'disabled' : ''}>
-                            <option value="mod" ${s.role==='mod'?'selected':''}>Mod</option>
-                            <option value="dev" ${s.role==='dev'?'selected':''}>Dev</option>
-                            <option value="admin" ${s.role==='admin'?'selected':''}>Admin</option>
-                        </select>
-                        <button class="btn-sm" onclick="app.resetStaffToken(${s.id},'${s.username}')">RESET TOKEN</button>
-                        ${!isSelf ? `<button class="btn-sm btn-red" onclick="app.deleteStaff(${s.id},'${s.username}')">DELETE</button>` : ''}
-                    </div>
-                </td>
-            </tr>`;
-        });
-
-        html += `</tbody></table>`;
-        document.getElementById('staff-table-container').innerHTML = html;
-    },
-
-    async createStaff() {
-        const username = document.getElementById('new-staff-user').value.trim();
-        const password = document.getElementById('new-staff-pass').value;
-        const role     = document.getElementById('new-staff-role').value;
-        const invite   = document.getElementById('new-staff-invite').value.trim();
-
-        if (!username || !password || !invite) return this.toast("All fields required.", "error");
-
-        const res = await this.req('staff_create', 'POST', { username, password, role, invite_code: invite });
-        if (res.error) return this.toast(res.error, "error");
-
-        this.toast(`Account created for ${username}.`);
-        document.getElementById('new-staff-user').value = '';
-        document.getElementById('new-staff-pass').value = '';
-        document.getElementById('new-staff-invite').value = '';
-        this.loadStaff();
-    },
-
-    async changeStaffRole(id, username, role) {
-        const ok = await this.confirm(`Change ${username}'s role to ${role.toUpperCase()}?`);
-        if (!ok) return;
-        const res = await this.req('staff_update', 'POST', { id, role });
-        if (res.error) return this.toast(res.error, "error");
-        this.toast(`${username} is now ${role}.`);
-        this.loadStaff();
-    },
-
-    async resetStaffToken(id, username) {
-        const ok = await this.confirm(`Reset ${username}'s session token? They will be logged out.`);
-        if (!ok) return;
-        const res = await this.req('staff_reset_token', 'POST', { id });
-        if (res.error) return this.toast(res.error, "error");
-        this.toast(`Token reset for ${username}.`);
-    },
-
-    async deleteStaff(id, username) {
-        const ok = await this.confirm(`Permanently delete ${username}'s account? This cannot be undone.`, true);
-        if (!ok) return;
-        const res = await this.req('staff_delete', 'POST', { id });
-        if (res.error) return this.toast(res.error, "error");
-        this.toast(`${username} deleted.`);
-        this.loadStaff();
-    },
-
-    // ════ SETTINGS ════
-    _settings: {},
-
-    loadSettings() {
-        const saved = localStorage.getItem('brume_settings');
-        this._settings = saved ? JSON.parse(saved) : {
-            theme: 'dark', accent: 'indigo', textSize: 14,
-            dateFormat: 'en-GB', sidebar: 'expanded', anomalyThreshold: 20
-        };
-        this.applySettings();
-        this.renderSettingsUI();
-    },
-
-    saveSettings() {
-        localStorage.setItem('brume_settings', JSON.stringify(this._settings));
-    },
-
-    applySettings() {
-        const s = this._settings;
-        const body = document.body;
-
-        // Theme
-        body.classList.remove('theme-dark', 'theme-midnight', 'theme-light');
-        if (s.theme !== 'dark') body.classList.add(`theme-${s.theme}`);
-
-        // Accent
-        body.classList.remove('accent-indigo', 'accent-amber', 'accent-rose');
-        body.classList.add(`accent-${s.accent}`);
-
-        // Text size
-        document.documentElement.style.setProperty('--base-font-size', (s.textSize || 14) + 'px');
-        document.querySelector('main') && (document.querySelector('main').style.fontSize = (s.textSize || 14) + 'px');
-
-        // Sidebar
-        body.classList.toggle('sidebar-compact', s.sidebar === 'compact');
-    },
-
-    renderSettingsUI() {
-        const s = this._settings;
-
-        // Theme buttons
-        document.querySelectorAll('.theme-btn[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === s.theme));
-        document.querySelectorAll('.theme-btn[data-fmt]').forEach(b => b.classList.toggle('active', b.dataset.fmt === s.dateFormat));
-        document.querySelectorAll('.theme-btn[data-sidebar]').forEach(b => b.classList.toggle('active', b.dataset.sidebar === s.sidebar));
-
-        // Accent swatches
-        document.querySelectorAll('.accent-swatch').forEach(b => b.classList.toggle('active', b.dataset.accent === s.accent));
-
-        // Sliders
-        const ts = document.getElementById('text-size-slider');
-        if (ts) { ts.value = s.textSize; document.getElementById('text-size-label').innerText = s.textSize + 'px'; }
-        const as = document.getElementById('anomaly-slider');
-        if (as) { as.value = s.anomalyThreshold; document.getElementById('anomaly-label').innerText = s.anomalyThreshold + '%'; }
-    },
-
-    setTheme(theme, btn) {
-        this._settings.theme = theme;
-        this.saveSettings(); this.applySettings();
-        document.querySelectorAll('.theme-btn[data-theme]').forEach(b => b.classList.toggle('active', b === btn));
-    },
-
-    setAccent(accent, btn) {
-        this._settings.accent = accent;
-        this.saveSettings(); this.applySettings();
-        document.querySelectorAll('.accent-swatch').forEach(b => b.classList.toggle('active', b === btn));
-    },
-
-    setTextSize(v) {
-        this._settings.textSize = parseInt(v);
-        document.getElementById('text-size-label').innerText = v + 'px';
-        this.saveSettings(); this.applySettings();
-    },
-
-    setDateFormat(fmt, btn) {
-        this._settings.dateFormat = fmt;
-        this.saveSettings();
-        document.querySelectorAll('.theme-btn[data-fmt]').forEach(b => b.classList.toggle('active', b === btn));
-    },
-
-    setSidebar(mode, btn) {
-        this._settings.sidebar = mode;
-        this.saveSettings(); this.applySettings();
-        document.querySelectorAll('.theme-btn[data-sidebar]').forEach(b => b.classList.toggle('active', b === btn));
-    },
-
-    setAnomalyThreshold(v) {
-        this._settings.anomalyThreshold = parseInt(v);
-        document.getElementById('anomaly-label').innerText = v + '%';
-        this.saveSettings();
-    },
-
-    async changePassword() {
-        const p1 = document.getElementById('change-pass').value;
-        const p2 = document.getElementById('change-pass-confirm').value;
-        if (!p1) return this.toast("Enter a new password.", "error");
-        if (p1 !== p2) return this.toast("Passwords don't match.", "error");
-        const res = await this.req('change_password', 'POST', { password: p1 });
-        if (res.error) return this.toast(res.error, "error");
-        this.toast("Password updated.");
-        document.getElementById('change-pass').value = '';
-        document.getElementById('change-pass-confirm').value = '';
-    },
-
-    async clearEconomySnapshots() {
-        const ok = await this.confirm('Permanently delete ALL economy snapshots? Charts will be empty until new data accumulates.', true);
-        if (!ok) return;
-        const res = await this.req('purge_snapshots', 'POST', {});
-        if (res.error) return this.toast(res.error, "error");
-        this.toast("Economy snapshots purged.");
-    },
-
-    async clearSessionLogs() {
-        const ok = await this.confirm('Permanently delete ALL session logs? Heatmap and retention data will reset.', true);
-        if (!ok) return;
-        const res = await this.req('purge_sessions', 'POST', {});
-        if (res.error) return this.toast(res.error, "error");
-        this.toast("Session logs purged.");
-    },
-
-    // ════ CONFIRM MODAL ════
-    _confirmResolve: null,
-
-    confirm(message, danger = false) {
-        return new Promise(resolve => {
-            const modal = document.getElementById('confirm-modal');
-            document.getElementById('confirm-body').innerText = message;
-            const btn = document.getElementById('confirm-ok');
-            btn.style.background = danger ? 'var(--red)' : 'var(--accent)';
-            modal.style.display = 'flex';
-            this._confirmResolve = (val) => {
-                modal.style.display = 'none';
-                resolve(val);
-            };
-        });
-    },
-
-    closeConfirm() {
-        if (this._confirmResolve) this._confirmResolve(false);
-    },
-
-    // ════ SECURITY ════
-    _secTab: 'alerts',
-
-    setSecTab(tab, btn) {
-        this._secTab = tab;
-        ['alerts','analysis','rollback','settings-sec'].forEach(t => {
-            const el = document.getElementById(`sec-${t}`);
-            if (el) el.style.display = t === tab ? 'block' : 'none';
-        });
-        document.querySelectorAll('.sec-tab').forEach(b => {
-            b.style.color = b === btn ? 'var(--text-primary)' : 'var(--text-dim)';
-            b.style.borderBottomColor = b === btn ? 'var(--accent)' : 'transparent';
-        });
-        if (tab === 'alerts') this.loadAlerts();
-        if (tab === 'analysis') this.loadAnalysis();
-    },
-
-    async loadAlerts() {
-        const showResolved = document.getElementById('show-resolved')?.checked;
-        const res = await this.req(`alerts_list${showResolved ? '&resolved=true' : ''}`);
-        const container = document.getElementById('alerts-container');
-        if (!container) return;
-
-        // Update badge
-        this.updateAlertBadge(res.unresolved_count || 0);
-
-        if (res.error) {
-            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
-            return;
-        }
-
-        if (!res.alerts?.length) {
-            container.innerHTML = `<div style="text-align:center;padding:48px;font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No ${showResolved ? '' : 'unresolved '}alerts. Server looks clean.</div>`;
-            return;
-        }
-
-        const severityColor = { low: 'var(--text-dim)', medium: 'var(--amber)', high: 'var(--red)', critical: 'var(--red)' };
-        const typeIcon = { VELOCITY: '⚡', SNAPSHOT_DELTA: '📈', ALT_ACCOUNT: '👥', ECONOMY_SPIKE: '💹' };
-
-        container.innerHTML = res.alerts.map(a => {
-            const date = new Date(a.created_at).toLocaleString('en-GB', { hour12: false });
-            const col = severityColor[a.severity] || 'var(--text-secondary)';
-            const icon = typeIcon[a.type] || '⚠';
-            const resolved = a.resolved ? `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--green);background:var(--green-dim);padding:2px 6px;border-radius:2px;border:1px solid rgba(0,229,160,0.2);">RESOLVED by ${a.resolved_by}</span>` : '';
-
-            return `<div style="background:var(--bg-panel);border:1px solid var(--border-dim);border-left:3px solid ${col};border-radius:4px;padding:16px;margin-bottom:10px;${a.resolved ? 'opacity:0.5;' : ''}">
-                <div style="display:flex;align-items:flex-start;gap:12px;">
-                    <span style="font-size:18px;flex-shrink:0;">${icon}</span>
-                    <div style="flex:1;">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
-                            <span style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:${col};">${a.type}</span>
-                            <span style="font-family:'Space Mono',monospace;font-size:10px;background:${col === 'var(--red)' ? 'var(--red-dim)' : 'var(--amber-dim)'};color:${col};border:1px solid ${col === 'var(--red)' ? 'rgba(255,71,87,0.3)' : 'rgba(255,184,48,0.3)'};padding:1px 6px;border-radius:2px;">${a.severity.toUpperCase()}</span>
-                            <span style="font-weight:700;font-size:14px;">${a.player_name !== 'SERVER' ? `<span class="player-link" onclick="app.openProfileModal('${a.player_name}')">${a.player_name}</span>` : 'SERVER'}</span>
-                            ${resolved}
-                        </div>
-                        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);line-height:1.7;margin-bottom:8px;">${a.detail}</p>
-                        <div style="display:flex;align-items:center;gap:10px;">
-                            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);">${date}</span>
-                            ${!a.resolved ? `
-                            <button class="btn-sm" onclick="app.resolveAlert(${a.id})">RESOLVE</button>
-                            ${a.player_name !== 'SERVER' ? `
-                            <button class="btn-sm" onclick="app.openProfileModal('${a.player_name}')">VIEW PLAYER</button>
-                            <button class="btn-sm" onclick="app.quickRollback('${a.player_name}')">ROLLBACK</button>
-                            ` : ''}` : ''}
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
-    },
-
-    updateAlertBadge(count) {
-        const badge = document.getElementById('alert-badge');
-        if (!badge) return;
-        if (count > 0) {
-            badge.style.display = 'inline-block';
-            badge.innerText = count > 99 ? '99+' : count;
-        } else {
-            badge.style.display = 'none';
-        }
-    },
-
-    async resolveAlert(id) {
-        const res = await this.req('alert_resolve', 'POST', { id });
-        if (res.error) return this.toast(res.error, "error");
-        this.toast("Alert resolved.");
-        this.loadAlerts();
-    },
-
-    async resolveAllAlerts() {
-        const ok = await this.confirm('Mark all unresolved alerts as resolved?');
-        if (!ok) return;
-        const res = await this.req('alerts_resolve_all', 'POST', {});
-        if (res.error) return this.toast(res.error, "error");
-        this.toast("All alerts resolved.");
-        this.loadAlerts();
-    },
-
-    async loadAnalysis() {
-        const container = document.getElementById('analysis-container');
-        if (!container) return;
-        container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Running analysis...</p>`;
-
-        const res = await this.req('security_analysis');
-        if (res.error) {
-            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// Error: ${res.error}</p>`;
-            return;
-        }
-
-        const fmtC = this.fmtCoins.bind(this);
-        let html = '';
-
-        // Economy spikes
-        html += `<div class="card" style="margin-bottom:16px;">
-            <div class="card-title">Economy Spikes <span style="color:var(--red);margin-left:8px;">${res.spikes?.length || 0} found</span></div>`;
-        if (!res.spikes?.length) {
-            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No economy spikes detected.</p>`;
-        } else {
-            html += `<table class="data-table"><thead><tr><th>Time</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>`;
-            res.spikes.forEach(s => {
-                const date = new Date(s.snapped_at).toLocaleString('en-GB', { hour12: false });
-                const col = s.pct_change > 0 ? 'var(--red)' : 'var(--green)';
-                const sign = s.pct_change > 0 ? '+' : '';
-                html += `<tr>
-                    <td class="mono" style="color:var(--text-dim);">${date}</td>
-                    <td style="color:var(--text-secondary);">${fmtC(s.prev_coins)} ◎</td>
-                    <td style="color:var(--text-primary);">${fmtC(s.total_coins)} ◎</td>
-                    <td style="color:${col};font-weight:700;">${sign}${s.pct_change}%</td>
-                </tr>`;
-            });
-            html += `</tbody></table>`;
-        }
-        html += `</div>`;
-
-        // Snapshot deltas
-        html += `<div class="card" style="margin-bottom:16px;">
-            <div class="card-title">Largest Snapshot Jumps <span style="color:var(--amber);margin-left:8px;">${res.deltas?.length || 0} found</span></div>`;
-        if (!res.deltas?.length) {
-            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No suspicious jumps detected.</p>`;
-        } else {
-            html += `<table class="data-table"><thead><tr><th>Player</th><th>Before</th><th>After</th><th>Delta</th><th>Time</th><th></th></tr></thead><tbody>`;
-            res.deltas.forEach(d => {
-                const date = new Date(d.snapped_at).toLocaleDateString('en-GB');
-                const col = d.delta > 0 ? 'var(--red)' : 'var(--green)';
-                html += `<tr>
-                    <td style="font-weight:600;"><span class="player-link" onclick="app.openProfileModal('${d.name}')">${d.name}</span></td>
-                    <td style="color:var(--text-secondary);">${fmtC(d.prev_coins)} ◎</td>
-                    <td style="color:var(--text-primary);">${fmtC(d.current_coins)} ◎</td>
-                    <td style="color:${col};font-weight:700;">${d.delta > 0 ? '+' : ''}${fmtC(d.delta)} ◎</td>
-                    <td class="mono" style="color:var(--text-dim);">${date}</td>
-                    <td><button class="btn-sm" onclick="app.quickRollback('${d.name}')">ROLLBACK</button></td>
-                </tr>`;
-            });
-            html += `</tbody></table>`;
-        }
-        html += `</div>`;
-
-        // Alt accounts
-        html += `<div class="card" style="margin-bottom:16px;">
-            <div class="card-title">Shared IPs / Possible Alts <span style="color:var(--purple);margin-left:8px;">${res.alts?.length || 0} groups</span></div>`;
-        if (!res.alts?.length) {
-            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--green);">// No shared IPs detected.</p>`;
-        } else {
-            html += `<table class="data-table"><thead><tr><th>IP</th><th>Accounts</th><th>Names</th><th>Last Seen</th></tr></thead><tbody>`;
-            res.alts.forEach(a => {
-                const date = new Date(a.last_seen).toLocaleDateString('en-GB');
-                const names = a.names.split(', ').map(n =>
-                    `<span class="player-link" onclick="app.openProfileModal('${n}')">${n}</span>`
-                ).join(', ');
-                html += `<tr>
-                    <td class="mono" style="color:var(--text-dim);">${a.ip.replace(/(\d+\.\d+)\.\d+\.\d+/, '$1.*.*')}</td>
-                    <td style="color:var(--purple);font-weight:700;">${a.account_count}</td>
-                    <td>${names}</td>
-                    <td class="mono" style="color:var(--text-dim);">${date}</td>
-                </tr>`;
-            });
-            html += `</tbody></table>`;
-        }
-        html += `</div>`;
-
-        container.innerHTML = html;
-    },
-
-    // ── ROLLBACK ──
-    quickRollback(name) {
-        this.setSecTab('rollback', document.querySelectorAll('.sec-tab')[2]);
-        document.getElementById('rollback-search').value = name;
-        this.loadRollbackTimeline();
-    },
-
-    async loadRollbackTimeline() {
-        const name = document.getElementById('rollback-search').value.trim();
-        if (!name) return;
-        const container = document.getElementById('rollback-container');
-        container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading timeline...</p>`;
-
-        const res = await this.req('rollback_timeline', 'POST', { name });
-        if (res.error) {
-            container.innerHTML = `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--red);">// ${res.error}</p>`;
-            return;
-        }
-
-        const { player, snapshots } = res;
-        const fmtC = this.fmtCoins.bind(this);
-        const fmtD = this.fmtDuration.bind(this);
-
-        let html = `
-        <div class="card" style="margin-bottom:16px;">
-            <div style="display:flex;align-items:center;gap:16px;">
-                <div style="width:44px;height:44px;clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:18px;color:white;flex-shrink:0;">${player.name.charAt(0).toUpperCase()}</div>
-                <div>
-                    <h3 style="font-size:18px;font-weight:800;margin-bottom:4px;">${player.name}</h3>
-                    <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">
-                        Current: <span style="color:var(--amber);">${fmtC(player.coins)} ◎</span>
-                        &nbsp;·&nbsp; Lv.${player.level}
-                        &nbsp;·&nbsp; <span style="color:var(--green);">${fmtD(player.total_playtime_s)}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card" style="padding:0;">
-            <div style="padding:20px 24px 0;"><div class="card-title">Snapshot Timeline — ${snapshots.length} snapshots</div></div>
-            <div style="padding:0 24px 16px;">
-                <p style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:16px;line-height:1.7;">// Click RESTORE on any snapshot to roll this player back to that point in time. This will overwrite their current coins, level and XP.</p>`;
-
-        if (!snapshots.length) {
-            html += `<p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No snapshots found. Data accumulates over time.</p>`;
-        } else {
-            html += `<div style="position:relative;">`;
-            // Timeline line
-            html += `<div style="position:absolute;left:20px;top:0;bottom:0;width:1px;background:var(--border-dim);"></div>`;
-
-            snapshots.forEach((snap, i) => {
-                const date = new Date(snap.snapped_at).toLocaleString('en-GB', { hour12: false });
-                const isCurrent = i === 0;
-                const dotColor = isCurrent ? 'var(--green)' : 'var(--border-mid)';
-
-                html += `<div style="display:flex;align-items:flex-start;gap:16px;padding:10px 0;position:relative;">
-                    <div style="width:40px;height:40px;border-radius:50%;background:var(--bg-raised);border:2px solid ${dotColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;z-index:1;">
-                        ${isCurrent ? '<span style="font-size:8px;font-family:\'Space Mono\',monospace;color:var(--green);">NOW</span>' : `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);">${i + 1}</span>`}
-                    </div>
-                    <div style="flex:1;background:var(--bg-raised);border:1px solid ${isCurrent ? 'rgba(0,229,160,0.2)' : 'var(--border-dim)'};border-radius:4px;padding:12px 16px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-                            <div>
-                                <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:4px;">${date}</div>
-                                <div style="display:flex;gap:16px;font-family:'Space Mono',monospace;font-size:12px;">
-                                    <span style="color:var(--amber);">${fmtC(snap.coins)} ◎</span>
-                                    <span style="color:var(--purple);">Lv.${snap.level}</span>
-                                    <span style="color:var(--text-secondary);">XP: ${Number(snap.xp).toLocaleString()}</span>
-                                </div>
-                            </div>
-                            ${!isCurrent ? `<button class="btn-sm btn-red" onclick="app.executeRollback(${snap.id},'${player.name}',${snap.coins},${snap.level})">RESTORE</button>` : `<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--green);background:var(--green-dim);padding:2px 8px;border-radius:2px;border:1px solid rgba(0,229,160,0.2);">CURRENT</span>`}
-                        </div>
-                    </div>
-                </div>`;
-            });
-            html += `</div>`;
-        }
-
-        html += `</div></div>`;
-        container.innerHTML = html;
-    },
-
-    async executeRollback(snapshotId, name, coins, level) {
-        const ok = await this.confirm(
-            `Roll back ${name} to: ${this.fmtCoins(coins)} coins, Level ${level}?\n\nThis will overwrite their current stats. A new snapshot will be taken after the rollback.`,
-            true
-        );
-        if (!ok) return;
-
-        const res = await this.req('rollback_execute', 'POST', { snapshot_id: snapshotId, name });
-        if (res.error) return this.toast(res.error, "error");
-
-        this.toast(`${name} rolled back. Coins: ${this.fmtCoins(res.restored.coins)} ◎`);
-        this.loadRollbackTimeline();
-        this.loadLogs();
-    },
-
-    // ── WEBHOOK CONFIG ──
-    async saveWebhook() {
-        const url = document.getElementById('webhook-url').value.trim();
-        if (!url) return this.toast("Enter a webhook URL.", "error");
-        localStorage.setItem('brume_webhook', url);
-        this.toast("Webhook URL saved locally.");
-    },
-
-    async testWebhook() {
-        const url = document.getElementById('webhook-url').value.trim() || localStorage.getItem('brume_webhook');
-        if (!url) return this.toast("Enter a webhook URL first.", "error");
-        const res = await this.req('test_webhook', 'POST', { webhook_url: url });
-        if (res.error) return this.toast("Webhook failed: " + res.error, "error");
-        this.toast("Discord webhook test sent!");
-    },
-
-    // Poll alert count every 60s when logged in
-    startAlertPolling() {
-        this.req('alerts_list').then(r => { if (!r.error) this.updateAlertBadge(r.unresolved_count || 0); });
-        setInterval(() => {
-            this.req('alerts_list').then(r => { if (!r.error) this.updateAlertBadge(r.unresolved_count || 0); });
-        }, 60000);
+        return res.status(403).json({ error: "Forbidden: No permission." });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Server error: " + error.message });
     }
-};
-
-window.onload = () => {
-    app.init();
-
-    // Kick off player polling when that view is navigated to
-    const origNavigate = app.navigate.bind(app);
-    app.navigate = function(viewId) {
-        origNavigate(viewId);
-        if (viewId === 'players') app.startPlayerPolling();
-        if (viewId === 'bans') app.loadBans();
-        if (viewId === 'logs') app.loadLogs();
-        if (viewId === 'console') app.initConsole();
-        if (viewId === 'analytics') app.loadAnalytics();
-        if (viewId === 'staff') app.loadStaff();
-        if (viewId === 'settings') app.renderSettingsUI();
-        if (viewId === 'security') app.loadAlerts();
-    };
-};
+}
