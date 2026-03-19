@@ -1078,3 +1078,78 @@ body.sidebar-compact aside.sidebar .user-profile { justify-content: center; }
     border-color: var(--border-mid);
     transform: translateY(-1px);
 }
+
+/* ── INVENTORY INSPECTOR ── */
+.inv-slot {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: default;
+    transition: border-color 0.1s;
+    min-width: 36px;
+    max-width: 52px;
+}
+.inv-slot:hover { border-color: var(--accent) !important; }
+.inv-slot.hotbar { border-color: rgba(91,106,255,0.3); background: #1e1e38; }
+.inv-slot.armor  { border-color: rgba(255,184,48,0.25); background: #1e1e14; }
+.inv-slot.empty  { opacity: 0.4; cursor: default; }
+.inv-slot img {
+    width: 80%;
+    height: 80%;
+    image-rendering: pixelated;
+    object-fit: contain;
+}
+.inv-slot .slot-amount {
+    position: absolute;
+    bottom: 1px;
+    right: 3px;
+    font-family: 'Minecraft', monospace;
+    font-size: 9px;
+    color: white;
+    text-shadow: 1px 1px 0 #000;
+    line-height: 1;
+    pointer-events: none;
+}
+.inv-slot .slot-enchant-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: 2px;
+    background: linear-gradient(135deg, rgba(170,0,255,0.15), transparent);
+    pointer-events: none;
+}
+
+/* Tier border colors */
+.inv-slot.tier-COMMON     { border-color: rgba(170,170,170,0.3); }
+.inv-slot.tier-UNCOMMON   { border-color: rgba(85,255,85,0.4); }
+.inv-slot.tier-RARE       { border-color: rgba(85,85,255,0.5); }
+.inv-slot.tier-EPIC       { border-color: rgba(170,0,170,0.6); }
+.inv-slot.tier-LEGENDARY  { border-color: rgba(255,170,0,0.7); box-shadow: 0 0 6px rgba(255,170,0,0.2); }
+
+/* Minecraft lore tooltip */
+#inv-tooltip {
+    font-family: 'Minecraft', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+}
+#inv-tooltip .mc-name  { font-weight: bold; margin-bottom: 4px; display: block; }
+#inv-tooltip .mc-lore  { display: block; font-size: 12px; }
+#inv-tooltip .mc-empty { height: 4px; display: block; }
+
+/* Timeline list */
+.inv-timeline-entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-dim);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.inv-timeline-entry:hover { background: var(--bg-hover); padding-left: 8px; }
+.inv-timeline-entry:last-child { border-bottom: none; }
