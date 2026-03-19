@@ -737,20 +737,6 @@ const app = {
 
     renderInventoryTab() {
         const emptyMsg = document.getElementById('inv-empty-msg');
-        if (!this._invData) {
-            emptyMsg.style.display = 'block';
-            document.getElementById('inv-hotbar-grid').innerHTML = '';
-            document.getElementById('inv-main-grid').innerHTML = '';
-            document.getElementById('inv-armor-grid').innerHTML = '';
-            document.getElementById('inv-offhand-slot').innerHTML = '';
-            return;
-        }
-        emptyMsg.style.display = 'none';
-        const slots = this._invData.slots || [];
-        const armor  = this._invData.armor  || [];
-        const offhand = this._invData.offhand;
-
-        // Hotbar = slots 0-8, Main inventory = slots 9-35
         const hotbarGrid = document.getElementById('inv-hotbar-grid');
         const mainGrid   = document.getElementById('inv-main-grid');
         const armorGrid  = document.getElementById('inv-armor-grid');
@@ -761,41 +747,50 @@ const app = {
         armorGrid.innerHTML = '';
         offhandEl.innerHTML = '';
 
-        for (let i = 0; i < 9; i++) hotbarGrid.appendChild(this.makeSlot(slots[i], 'hotbar'));
-        // Main inv: rows 9-35 (slots 9,10,11... render as 3 rows of 9)
-        for (let i = 9; i < 36; i++) mainGrid.appendChild(this.makeSlot(slots[i]));
+        if (!this._invData) {
+            emptyMsg.style.display = 'block';
+            return;
+        }
+        emptyMsg.style.display = 'none';
 
-        // Armor: helmet[0], chest[1], legs[2], boots[3]
-        const armorLabels = ['⛑', '🧥', '👖', '👢'];
-        armor.forEach((item, i) => {
-            const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;align-items:center;gap:4px;';
-            wrap.appendChild(this.makeSlot(item, 'armor'));
-            armorGrid.appendChild(wrap);
-        });
+        const slots  = this._invData.slots  || [];
+        const armor  = this._invData.armor  || [];
+        const offhand = this._invData.offhand;
+
+        // Hotbar = slots 0-8
+        for (let i = 0; i < 9; i++) {
+            hotbarGrid.appendChild(this.makeSlot(slots[i] ?? null, 'hotbar'));
+        }
+
+        // Main inventory = slots 9-35 (3 rows of 9)
+        for (let i = 9; i < 36; i++) {
+            mainGrid.appendChild(this.makeSlot(slots[i] ?? null));
+        }
+
+        // Armor column — 4 slots stacked
+        const armorItems = armor.length >= 4 ? armor : [armor[0]??null, armor[1]??null, armor[2]??null, armor[3]??null];
+        armorItems.forEach(item => armorGrid.appendChild(this.makeSlot(item, 'armor')));
 
         // Offhand
-        if (offhand) offhandEl.appendChild(this.makeSlot(offhand));
-        else offhandEl.appendChild(this.makeSlot(null));
+        offhandEl.appendChild(this.makeSlot(offhand ?? null, 'offhand'));
     },
 
     renderVaultTab() {
-        const tabsEl = document.getElementById('vault-page-tabs');
-        const gridEl = document.getElementById('vault-grid');
+        const tabsEl  = document.getElementById('vault-page-tabs');
+        const gridEl  = document.getElementById('vault-grid');
         const emptyEl = document.getElementById('vault-empty-msg');
 
         if (!this._vaultData?.length) {
             emptyEl.style.display = 'block';
-            gridEl.style.display = 'none';
+            gridEl.style.display  = 'none';
             tabsEl.innerHTML = '';
             return;
         }
         emptyEl.style.display = 'none';
-        gridEl.style.display = 'grid';
+        gridEl.style.display  = 'grid';
 
-        // Page tabs
         tabsEl.innerHTML = this._vaultData.map((v, i) =>
-            `<button class="btn-sm vault-page-btn${i === 0 ? ' active' : ''}" onclick="app.showVaultPage(${i},this)" style="${i === 0 ? 'background:var(--accent);color:white;border-color:var(--accent);' : ''}">Page ${v.page}</button>`
+            `<button class="btn-sm vault-page-btn" data-idx="${i}" onclick="app.showVaultPage(${i},this)">Page ${v.page}</button>`
         ).join('');
 
         this.showVaultPage(0);
@@ -804,19 +799,24 @@ const app = {
     showVaultPage(idx, btn) {
         this._currentVaultPage = idx;
         document.querySelectorAll('.vault-page-btn').forEach((b, i) => {
-            b.style.background = i === idx ? 'var(--accent)' : '';
-            b.style.color = i === idx ? 'white' : '';
-            b.style.borderColor = i === idx ? 'var(--accent)' : '';
+            const active = i === idx;
+            b.style.background   = active ? 'var(--accent)' : '';
+            b.style.color        = active ? 'white' : '';
+            b.style.borderColor  = active ? 'var(--accent)' : '';
         });
-        const page = this._vaultData[idx];
+        const page   = this._vaultData[idx];
         const gridEl = document.getElementById('vault-grid');
         gridEl.innerHTML = '';
-        gridEl.style.gridTemplateColumns = 'repeat(9, 1fr)';
         const slots = page?.slots || [];
-        for (let i = 0; i < 45; i++) gridEl.appendChild(this.makeSlot(slots[i] || null));
+        // Vault is 5 rows × 9 cols = 45 slots
+        for (let i = 0; i < 45; i++) {
+            gridEl.appendChild(this.makeSlot(slots[i] ?? null));
+        }
         const t = page?.snapped_at ? new Date(page.snapped_at).toLocaleString('en-GB', { hour12: false }) : '';
-        document.getElementById('inv-snapshot-time').innerText = t ? `Snapshot: ${t}` : '';
+        const el = document.getElementById('inv-snapshot-time');
+        if (el) el.innerText = t ? `Snapshot: ${t}` : '';
     },
+
 
     async loadInvTimeline() {
         const name = document.getElementById('p-search').value.trim();
