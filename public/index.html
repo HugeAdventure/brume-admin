@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Brume Panel</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+    @font-face {
+        font-family: 'Minecraft';
+        src: url('https://cdn.jsdelivr.net/gh/South-Paw/typeface-minecraft@master/fonts/minecraft/minecraft.woff') format('woff');
+    }
+    </style>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -250,6 +256,60 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
                         <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">IP History</div></div><div id="player-ip-list" style="padding:0 20px 16px;"></div></div>
                         <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Security Alerts</div></div><div id="player-security-list" style="padding:0 20px 16px;"></div></div>
+                    </div>
+
+                    <!-- INVENTORY INSPECTOR -->
+                    <div class="card" style="margin-bottom:16px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                            <div class="card-title" style="margin-bottom:0;">Inventory Inspector</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <span id="inv-snapshot-time" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
+                                <button class="btn-sm" onclick="app.loadInventoryInspector()">↻ REFRESH</button>
+                            </div>
+                        </div>
+
+                        <!-- Inventory tabs: Current / Timeline -->
+                        <div style="display:flex;gap:0;border-bottom:1px solid var(--border-dim);margin-bottom:16px;">
+                            <button class="inv-tab active" onclick="app.setInvTab('inventory',this)" style="background:none;border:none;padding:8px 14px;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-primary);cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-1px;">INVENTORY</button>
+                            <button class="inv-tab" onclick="app.setInvTab('vault',this)" style="background:none;border:none;padding:8px 14px;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">VAULT</button>
+                            <button class="inv-tab" onclick="app.setInvTab('timeline',this)" style="background:none;border:none;padding:8px 14px;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">TIMELINE</button>
+                        </div>
+
+                        <!-- INVENTORY TAB -->
+                        <div id="inv-tab-inventory">
+                            <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+                                <!-- Armor column -->
+                                <div>
+                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-bottom:8px;">ARMOR</div>
+                                    <div id="inv-armor-grid" style="display:grid;grid-template-columns:1fr;gap:3px;"></div>
+                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin:8px 0 4px;">OFF</div>
+                                    <div id="inv-offhand-slot"></div>
+                                </div>
+                                <!-- Main inventory -->
+                                <div style="flex:1;">
+                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-bottom:8px;">HOTBAR</div>
+                                    <div id="inv-hotbar-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px;margin-bottom:12px;"></div>
+                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-bottom:8px;">INVENTORY</div>
+                                    <div id="inv-main-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px;"></div>
+                                </div>
+                            </div>
+                            <div id="inv-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No inventory snapshot yet. Accumulates on player quit.</div>
+                        </div>
+
+                        <!-- VAULT TAB -->
+                        <div id="inv-tab-vault" style="display:none;">
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="vault-page-tabs"></div>
+                            <div id="vault-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px;"></div>
+                            <div id="vault-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No vault data yet.</div>
+                        </div>
+
+                        <!-- TIMELINE TAB -->
+                        <div id="inv-tab-timeline" style="display:none;">
+                            <div id="inv-timeline-list"></div>
+                        </div>
+
+                        <!-- Item tooltip -->
+                        <div id="inv-tooltip" style="display:none;position:fixed;z-index:9000;pointer-events:none;background:#100010;border:2px solid #5000be;border-radius:3px;padding:8px 10px;font-family:'Minecraft',monospace;font-size:13px;line-height:1.5;max-width:280px;box-shadow:4px 4px 0 rgba(0,0,0,0.5);"></div>
                     </div>
 
                     <!-- INLINE EDIT -->
