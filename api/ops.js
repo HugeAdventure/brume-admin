@@ -825,7 +825,6 @@ export default async function handler(req, res) {
 
         // ════ ROLLBACK ════
 
-        // Get rollback timeline for a player
         if (req.method === 'POST' && mode === 'rollback_timeline' && ROLES.modOrAbove.includes(user.role)) {
             const { name } = req.body;
             const [[player]] = await db.execute(
@@ -835,17 +834,23 @@ export default async function handler(req, res) {
 
             const [snapshots] = await db.execute(
                 `SELECT id, coins, level, xp, snapped_at FROM player_snapshots
-                 WHERE uuid = ?
-                 ORDER BY snapped_at DESC
-                 LIMIT 50`,
+                 WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 50`,
                 [player.uuid]
             );
-            return res.json({ player, snapshots });
+
+            // Also get inventory snapshot timestamps so UI can show which rollback points have inventory
+            const [invSnaps] = await db.execute(
+                `SELECT id, snapped_at, trigger_type FROM inventory_snapshots
+                 WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 50`,
+                [player.uuid]
+            );
+
+            return res.json({ player, snapshots, inv_snapshots: invSnaps });
         }
 
-        // Execute rollback
+        // Execute rollback — now restores inventory too
         if (req.method === 'POST' && mode === 'rollback_execute' && user.role === 'admin') {
-            const { snapshot_id, name } = req.body;
+            const { snapshot_id, name, inv_snapshot_id } = req.body;
 
             const [[snap]] = await db.execute(
                 `SELECT ps.*, bs.uuid FROM player_snapshots ps
@@ -855,30 +860,119 @@ export default async function handler(req, res) {
             );
             if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
 
-            // Restore full stats row
+            // Restore stats
             await db.execute(
                 `UPDATE brume_stats SET coins = ?, level = ?, xp = ? WHERE uuid = ?`,
                 [snap.coins, snap.level, snap.xp, snap.uuid]
             );
 
-            // Fire RCON to update in-game if player is online
-            try {
-                await rconExec(`economy set ${name} ${snap.coins}`);
-            } catch (e) {
-                // Non-fatal if RCON fails or player is offline
+            try { await rconExec(`economy set ${name} ${snap.coins}`); } catch (e) {}
+
+            let invRestored = false;
+            // Restore inventory if an inv_snapshot_id was provided
+            if (inv_snapshot_id) {
+                const [[invSnap]] = await db.execute(
+                    `SELECT * FROM inventory_snapshots WHERE id = ? AND uuid = ?`,
+                    [inv_snapshot_id, snap.uuid]
+                );
+                if (invSnap) {
+                    // Store the restored inventory data so Skript can apply it on next join
+                    await db.execute(
+                        `UPDATE brume_stats SET inventory = ? WHERE uuid = ?`,
+                        [invSnap.snapshot_data, snap.uuid]
+                    );
+                    // Also store armor + offhand in new columns
+                    await db.execute(
+                        `UPDATE brume_stats SET armor_restore = ?, offhand_restore = ? WHERE uuid = ?`,
+                        [invSnap.armor_data, invSnap.offhand_data, snap.uuid]
+                    ).catch(() => {}); // columns may not exist yet
+                    invRestored = true;
+                }
             }
 
             const snapDate = new Date(snap.snapped_at).toLocaleString('en-GB');
-            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)',
-                [user.username, `Rolled back ${name} to snapshot from ${snapDate} — Coins: ${snap.coins}, Lv: ${snap.level}, XP: ${snap.xp}`]);
+            const logMsg = `Rolled back ${name} to ${snapDate} — Coins: ${snap.coins}, Lv: ${snap.level}, XP: ${snap.xp}${invRestored ? ', + inventory' : ''}`;
+            await db.execute('INSERT INTO action_logs (username, action) VALUES (?, ?)', [user.username, logMsg]);
 
-            // Create a "post-rollback" snapshot so the timeline reflects the change
             await db.execute(
                 `INSERT INTO player_snapshots (uuid, name, coins, level, xp) VALUES (?, ?, ?, ?, ?)`,
                 [snap.uuid, name, snap.coins, snap.level, snap.xp]
             );
 
-            return res.json({ success: true, restored: { coins: snap.coins, level: snap.level, xp: snap.xp } });
+            return res.json({ success: true, inv_restored: invRestored, restored: { coins: snap.coins, level: snap.level, xp: snap.xp } });
+        }
+
+        // ════ INVENTORY INSPECTOR ════
+
+        // Get latest inventory + vault for a player
+        if (req.method === 'POST' && mode === 'player_inventory' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [[player]] = await db.execute(
+                `SELECT uuid FROM brume_stats WHERE name = ?`, [name]
+            );
+            if (!player) return res.status(404).json({ error: 'Player not found' });
+
+            const [[latestInv]] = await db.execute(
+                `SELECT * FROM inventory_snapshots WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 1`,
+                [player.uuid]
+            );
+
+            // Get latest vault snapshot per page
+            const [vaultSnaps] = await db.execute(
+                `SELECT vs.* FROM vault_snapshots vs
+                 INNER JOIN (
+                     SELECT page, MAX(snapped_at) as latest FROM vault_snapshots WHERE uuid = ? GROUP BY page
+                 ) latest ON vs.page = latest.page AND vs.snapped_at = latest.latest
+                 WHERE vs.uuid = ? ORDER BY vs.page ASC`,
+                [player.uuid, player.uuid]
+            );
+
+            return res.json({
+                inventory: latestInv ? {
+                    id: latestInv.id,
+                    slots: JSON.parse(latestInv.snapshot_data || '[]'),
+                    armor: JSON.parse(latestInv.armor_data || '[]'),
+                    offhand: latestInv.offhand_data ? JSON.parse(latestInv.offhand_data) : null,
+                    snapped_at: latestInv.snapped_at,
+                } : null,
+                vault: vaultSnaps.map(v => ({
+                    page: v.page,
+                    slots: JSON.parse(v.snapshot_data || '[]'),
+                    snapped_at: v.snapped_at,
+                })),
+            });
+        }
+
+        // Get a specific inventory snapshot detail
+        if (req.method === 'POST' && mode === 'inventory_snapshot_detail' && ROLES.modOrAbove.includes(user.role)) {
+            const { id } = req.body;
+            const [[snap]] = await db.execute(
+                `SELECT * FROM inventory_snapshots WHERE id = ?`, [id]
+            );
+            if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
+            return res.json({
+                id: snap.id,
+                slots: JSON.parse(snap.snapshot_data || '[]'),
+                armor: JSON.parse(snap.armor_data || '[]'),
+                offhand: snap.offhand_data ? JSON.parse(snap.offhand_data) : null,
+                snapped_at: snap.snapped_at,
+                trigger_type: snap.trigger_type,
+            });
+        }
+
+        // List inventory snapshot timeline for a player
+        if (req.method === 'POST' && mode === 'inventory_timeline' && ROLES.modOrAbove.includes(user.role)) {
+            const { name } = req.body;
+            const [[player]] = await db.execute(
+                `SELECT uuid FROM brume_stats WHERE name = ?`, [name]
+            );
+            if (!player) return res.status(404).json({ error: 'Player not found' });
+            const [snaps] = await db.execute(
+                `SELECT id, snapped_at, trigger_type FROM inventory_snapshots
+                 WHERE uuid = ? ORDER BY snapped_at DESC LIMIT 100`,
+                [player.uuid]
+            );
+            return res.json(snaps);
         }
 
         // Discord webhook test
