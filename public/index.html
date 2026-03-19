@@ -277,30 +277,30 @@
 
                         <!-- INVENTORY TAB -->
                         <div id="inv-tab-inventory">
-                            <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
-                                <!-- Armor column -->
-                                <div>
-                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-bottom:8px;">ARMOR</div>
-                                    <div id="inv-armor-grid" style="display:grid;grid-template-columns:1fr;gap:3px;"></div>
-                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin:8px 0 4px;">OFF</div>
-                                    <div id="inv-offhand-slot"></div>
+                            <div class="inv-grid-wrap">
+                                <!-- Left: Armor + offhand column -->
+                                <div style="flex-shrink:0;">
+                                    <div class="inv-section-label">Armor</div>
+                                    <div id="inv-armor-grid" class="inv-grid cols1" style="margin-bottom:6px;"></div>
+                                    <div class="inv-section-label">Off</div>
+                                    <div id="inv-offhand-slot" class="inv-grid cols1"></div>
                                 </div>
-                                <!-- Main inventory -->
-                                <div style="flex:1;">
-                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-bottom:8px;">HOTBAR</div>
-                                    <div id="inv-hotbar-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px;margin-bottom:12px;"></div>
-                                    <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-bottom:8px;">INVENTORY</div>
-                                    <div id="inv-main-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px;"></div>
+                                <!-- Right: Hotbar + main inventory -->
+                                <div style="flex-shrink:0;">
+                                    <div class="inv-section-label">Hotbar</div>
+                                    <div id="inv-hotbar-grid" class="inv-grid cols9" style="margin-bottom:10px;"></div>
+                                    <div class="inv-section-label">Inventory</div>
+                                    <div id="inv-main-grid" class="inv-grid cols9"></div>
                                 </div>
                             </div>
-                            <div id="inv-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No inventory snapshot yet. Accumulates on player quit.</div>
+                            <div id="inv-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No inventory snapshot yet — saves on player quit.</div>
                         </div>
 
                         <!-- VAULT TAB -->
                         <div id="inv-tab-vault" style="display:none;">
                             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="vault-page-tabs"></div>
-                            <div id="vault-grid" style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px;"></div>
-                            <div id="vault-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No vault data yet.</div>
+                            <div id="vault-grid" class="inv-grid cols9"></div>
+                            <div id="vault-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No vault snapshots yet.</div>
                         </div>
 
                         <!-- TIMELINE TAB -->
@@ -309,7 +309,7 @@
                         </div>
 
                         <!-- Item tooltip -->
-                        <div id="inv-tooltip" style="display:none;position:fixed;z-index:9000;pointer-events:none;background:#100010;border:2px solid #5000be;border-radius:3px;padding:8px 10px;font-family:'Minecraft',monospace;font-size:13px;line-height:1.5;max-width:280px;box-shadow:4px 4px 0 rgba(0,0,0,0.5);"></div>
+                        <div id="inv-tooltip" style="display:none;position:fixed;z-index:9000;pointer-events:none;background:#100010;border:2px solid #5000be;border-radius:3px;padding:8px 10px;max-width:300px;box-shadow:4px 4px 0 rgba(0,0,0,0.6);"></div>
                     </div>
 
                     <!-- INLINE EDIT -->
