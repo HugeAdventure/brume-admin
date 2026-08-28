@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brume Panel</title>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>Brume Control Plane</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
     @font-face {
         font-family: 'Minecraft';
@@ -17,663 +19,665 @@
 
     <div id="toast-container"></div>
 
-    <!-- ═══ LOGIN ═══ -->
+    <!-- ═══ AUTH LAYER ═══ -->
     <div id="auth-layer">
         <div class="login-card">
-            <div class="brand-logo">
-                <div class="brand-icon"></div>
-                <h2>Brume</h2>
+            <div class="brand-badge">
+                <div class="brand-mark"></div>
+                <div class="brand-meta">
+                    <span class="brand-title">Brume</span>
+                    <span class="brand-tag">Ops Console</span>
+                </div>
             </div>
-            <p class="subtitle">// SECURE ADMIN ACCESS</p>
+            
+            <div class="login-heading">
+                <h2>Sign in to workstation</h2>
+                <p>Enter your authorized staff credentials to continue</p>
+            </div>
+
             <form id="login-form" onsubmit="app.login(event)">
                 <div class="input-group">
-                    <label>Username</label>
-                    <input type="text" id="auth-user" required placeholder="enter username">
+                    <label for="auth-user">Username</label>
+                    <input type="text" id="auth-user" required placeholder="Staff identifier" autocomplete="username">
                 </div>
                 <div class="input-group">
-                    <label>Password</label>
-                    <input type="password" id="auth-pass" required placeholder="••••••••">
+                    <label for="auth-pass">Password</label>
+                    <input type="password" id="auth-pass" required placeholder="••••••••••••" autocomplete="current-password">
                 </div>
-                <button type="submit" class="btn-primary" id="login-btn">AUTHENTICATE</button>
+                <button type="submit" class="btn-primary" id="login-btn">
+                    <span>Authenticate</span>
+                    <kbd>↵</kbd>
+                </button>
             </form>
-            <div id="auth-error"></div>
+            <div id="auth-error" class="auth-error-box"></div>
         </div>
     </div>
 
-    <!-- ═══ DASHBOARD ═══ -->
+    <!-- ═══ DASHBOARD LAYER ═══ -->
     <div id="dashboard-layer" style="display: none;">
 
-        <!-- MOBILE HEADER -->
-        <div class="mobile-header">
-            <button class="hamburger" onclick="app.toggleSidebar()" aria-label="Menu">
+        <!-- Mobile Bar -->
+        <header class="mobile-header">
+            <button class="icon-btn hamburger" onclick="app.toggleSidebar()" aria-label="Toggle menu">
                 <span></span><span></span><span></span>
             </button>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <div class="logo-hex" style="width:20px;height:20px;"></div>
-                <span style="font-size:16px;font-weight:800;">Brume</span>
-            </div>
-            <button class="hamburger" onclick="app.openSearch()" aria-label="Search" style="font-size:18px;display:flex;align-items:center;justify-content:center;">⌕</button>
-        </div>
+            <div class="brand-mark-sm"></div>
+            <span class="mobile-title">Brume</span>
+            <button class="icon-btn" onclick="app.openSearch()" aria-label="Search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </button>
+        </header>
 
-        <!-- SIDEBAR OVERLAY (mobile) -->
         <div id="sidebar-overlay" onclick="app.closeSidebar()"></div>
 
-        <!-- SIDEBAR -->
+        <!-- ═══ SIDEBAR ═══ -->
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <div class="logo-hex"></div>
-                <h2>Brume</h2>
-            </div>
-
-            <div class="user-profile">
-                <div class="avatar" id="profile-avatar">A</div>
-                <div class="user-info">
-                    <h4 id="profile-name">Username</h4>
-                    <span id="profile-role" class="badge">ROLE</span>
+            <div class="sidebar-brand">
+                <div class="brand-mark"></div>
+                <div class="brand-text">
+                    <span class="title">Brume</span>
+                    <span class="version">v2.4 Production</span>
                 </div>
             </div>
 
-            <div class="nav-section">
-                <span class="nav-label">Moderation</span>
-                <button class="nav-link active" data-roles="admin,mod" onclick="app.navigate('overview')">Overview</button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('players')">Online Players</button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('player')">Player Database</button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('bans')">Bans &amp; Warnings</button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('logs')">Audit Logs</button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('security')">
-                    Security
-                    <span id="alert-badge" style="display:none;float:right;background:var(--red);color:white;font-family:'Space Mono',monospace;font-size:9px;padding:1px 6px;border-radius:2px;font-weight:700;"></span>
-                </button>
+            <!-- Profile Pill -->
+            <div class="profile-card">
+                <div class="avatar" id="profile-avatar">A</div>
+                <div class="profile-details">
+                    <div class="profile-name-row">
+                        <span id="profile-name">Username</span>
+                        <span id="profile-role" class="role-pill">ROLE</span>
+                    </div>
+                    <span class="profile-status"><span class="pulse-dot green"></span> Connected</span>
+                </div>
             </div>
 
-            <div class="nav-section">
-                <span class="nav-label">Analytics</span>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('analytics')">Analytics</button>
-            </div>
+            <!-- Navigation -->
+            <nav class="nav-container">
+                <div class="nav-group">
+                    <span class="nav-header">Workstation</span>
+                    <button class="nav-item active" data-roles="admin,mod" onclick="app.navigate('overview')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                        <span>Overview</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin,mod" onclick="app.navigate('players')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        <span>Live Players</span>
+                        <span class="badge-count" id="sidebar-online-count">0</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin,mod" onclick="app.navigate('player')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+                        <span>Player Directory</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin,mod" onclick="app.navigate('bans')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
+                        <span>Sanctions</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin,mod" onclick="app.navigate('logs')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        <span>Audit Trail</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin,mod" onclick="app.navigate('security')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        <span>Security Radar</span>
+                        <span id="alert-badge" class="badge-alert" style="display:none;">0</span>
+                    </button>
+                </div>
 
-            <div class="nav-section">
-                <span class="nav-label">Administration</span>
-                <button class="nav-link" data-roles="admin" onclick="app.navigate('staff')">Staff Management</button>
-                <button class="nav-link" data-roles="admin" onclick="app.navigate('console')">Server Console</button>
-            </div>
+                <div class="nav-group">
+                    <span class="nav-header">Analytics</span>
+                    <button class="nav-item" data-roles="admin,mod" onclick="app.navigate('analytics')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                        <span>Economy &amp; Growth</span>
+                    </button>
+                </div>
 
-            <div class="nav-section">
-                <span class="nav-label">Development</span>
-                <button class="nav-link" data-roles="admin,dev" onclick="window.open('/architect','_blank')">Item Architect ↗</button>
-            </div>
+                <div class="nav-group">
+                    <span class="nav-header">Control &amp; Engine</span>
+                    <button class="nav-item" data-roles="admin" onclick="app.navigate('staff')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        <span>Staff Access</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin" onclick="app.navigate('console')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                        <span>Server Terminal</span>
+                    </button>
+                    <button class="nav-item" data-roles="admin,dev" onclick="window.open('/architect','_blank')">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                        <span>Item Architect <span class="ext-tag">↗</span></span>
+                    </button>
+                </div>
+            </nav>
 
+            <!-- Sidebar Footer -->
             <div class="sidebar-footer">
-                <button class="nav-link" onclick="app.openSearch()" style="color:var(--text-secondary);margin-bottom:4px;">
-                    <span style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;">⌕ SEARCH</span>
-                    <span style="float:right;font-family:'Space Mono',monospace;font-size:9px;background:var(--bg-raised);border:1px solid var(--border-mid);padding:1px 6px;border-radius:2px;color:var(--text-dim);">Ctrl+K</span>
+                <button class="footer-btn search-trigger" onclick="app.openSearch()">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        <span>Search</span>
+                    </div>
+                    <kbd>⌘K</kbd>
                 </button>
-                <button class="nav-link" data-roles="admin,mod" onclick="app.navigate('settings')" style="color:var(--text-secondary);margin-bottom:4px;">⚙ Settings</button>
-                <button class="nav-link text-danger" onclick="app.logout()">Sign Out</button>
+                <div class="footer-actions">
+                    <button class="icon-btn-text" data-roles="admin,mod" onclick="app.navigate('settings')">Settings</button>
+                    <button class="icon-btn-text text-danger" onclick="app.logout()">Sign Out</button>
+                </div>
             </div>
         </aside>
 
-        <!-- CONTENT -->
+        <!-- ═══ MAIN WORKSPACE ═══ -->
         <main>
-
-            <!-- OVERVIEW -->
-            <div id="view-overview" class="view-page active">
-                <div class="status-row">
-                    <span class="status-dot"></span>
-                    <span>SERVER ONLINE</span>
-                    <span class="sep">—</span>
-                    <span id="current-time">--:--:--</span>
-                </div>
-                <div class="page-header">
-                    <h1>Server Overview</h1>
-                    <p>Live economy statistics and server metrics</p>
-                </div>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-card-icon">◈</div>
-                        <span class="stat-label">Registered Players</span>
-                        <div class="stat-value" id="stat-users">—</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-icon" style="background:var(--amber-dim);border-color:rgba(255,184,48,0.2);">◎</div>
-                        <span class="stat-label">Economy Vault</span>
-                        <div class="stat-value text-gold" id="stat-eco">—</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-card-icon" style="background:var(--purple-dim);border-color:rgba(176,107,255,0.2);">◆</div>
-                        <span class="stat-label">Wealthiest Player</span>
-                        <div class="stat-value text-purple" id="stat-rich">—</div>
-                    </div>
+            <!-- Top Control Strip -->
+            <div class="top-action-bar">
+                <div class="status-indicator">
+                    <span class="pulse-dot green"></span>
+                    <span class="status-label">Network Live</span>
+                    <span class="divider">/</span>
+                    <span id="current-time" class="mono text-muted">00:00:00</span>
                 </div>
 
-                <div class="card">
-                    <div class="card-title">Recent Activity</div>
-                    <div id="overview-logs-container">
-                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:8px 0;">Loading...</p>
+                <div class="top-controls">
+                    <div class="sync-picker">
+                        <span class="control-label">Refresh:</span>
+                        <select id="auto-refresh-rate" onchange="app.setRefreshRate(this.value)">
+                            <option value="5000">Fast (5s)</option>
+                            <option value="15000" selected>Normal (15s)</option>
+                            <option value="60000">Lazy (1m)</option>
+                            <option value="0">Manual only</option>
+                        </select>
                     </div>
-                </div>
-
-                <!-- Analytics Summary Row -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
-                    <div class="card">
-                        <div class="card-title">Economy Trend <span style="margin-left:auto;font-size:10px;color:var(--accent);cursor:pointer;" onclick="app.navigate('analytics')">VIEW FULL →</span></div>
-                        <canvas id="overview-eco-chart" height="80"></canvas>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">This Week <span style="margin-left:auto;font-size:10px;color:var(--accent);cursor:pointer;" onclick="app.navigate('analytics')">VIEW FULL →</span></div>
-                        <div id="overview-week-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
-                            <div><span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);display:block;margin-bottom:4px;">NEW PLAYERS</span><span id="ov-new" style="font-size:22px;font-weight:800;color:var(--green);">—</span></div>
-                            <div><span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);display:block;margin-bottom:4px;">RETURNING</span><span id="ov-ret" style="font-size:22px;font-weight:800;color:var(--accent-bright);">—</span></div>
-                            <div><span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);display:block;margin-bottom:4px;">AVG SESSION</span><span id="ov-avg-session" style="font-size:22px;font-weight:800;">—</span></div>
-                            <div><span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);display:block;margin-bottom:4px;">TOTAL SESSIONS</span><span id="ov-sessions" style="font-size:22px;font-weight:800;color:var(--amber);">—</span></div>
-                        </div>
-                    </div>
+                    <button class="btn-ghost sm" onclick="app.manualRefresh()" title="Quick Refresh (R)">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                        <span>Refresh</span>
+                    </button>
                 </div>
             </div>
 
-            <!-- PLAYER MANAGER -->
-            <!-- PLAYER DATABASE -->
-            <div id="view-player" class="view-page">
+            <!-- ── VIEW: OVERVIEW ── -->
+            <section id="view-overview" class="view-page active">
                 <div class="page-header">
-                    <h1>Player Database</h1>
-                    <p>Search, inspect and modify player records</p>
-                </div>
-
-                <!-- Search with autocomplete -->
-                <div class="card" style="margin-bottom:20px;position:relative;">
-                    <div class="card-title">Search</div>
-                    <div style="display:flex;gap:10px;position:relative;">
-                        <div style="flex:1;position:relative;">
-                            <input type="text" id="p-search" placeholder="Username or UUID..." autocomplete="off"
-                                oninput="app.playerSearchInput(this.value)"
-                                onkeydown="app.playerSearchKeydown(event)">
-                            <div id="p-autocomplete" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-raised);border:1px solid var(--border-mid);border-top:none;border-radius:0 0 4px 4px;z-index:100;overflow:hidden;"></div>
-                        </div>
-                        <button class="btn-primary" style="width:auto;" onclick="app.loadPlayerDetail()">SEARCH</button>
+                    <div>
+                        <h1>Server Overview</h1>
+                        <p>Real-time player demographics, economy liquidity, and activity velocity</p>
                     </div>
                 </div>
 
-                <!-- Player profile — hidden until search -->
+                <!-- Primary KPI Metrics -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-title">Active Database</span>
+                            <span class="metric-badge">Total</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-value" id="stat-users">—</span>
+                        </div>
+                        <div class="metric-footer text-muted">Registered player profiles</div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-title">Circulating Coins</span>
+                            <span class="metric-badge gold">Economy</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-value text-gold" id="stat-eco">—</span>
+                        </div>
+                        <div class="metric-footer text-muted">Aggregate vault balance</div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-title">Wealth Cap</span>
+                            <span class="metric-badge purple">Leader</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-value text-purple" id="stat-rich" style="font-size:20px;">—</span>
+                        </div>
+                        <div class="metric-footer text-muted">Current highest coin holder</div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-title">Average Session</span>
+                            <span class="metric-badge green">Engagement</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-value text-green" id="ov-avg-session">—</span>
+                        </div>
+                        <div class="metric-footer text-muted">Rolling duration per login</div>
+                    </div>
+                </div>
+
+                <!-- Two-Column Insight Deck -->
+                <div class="grid-deck two-col">
+                    <div class="panel-card">
+                        <div class="panel-card-header">
+                            <div>
+                                <h3>Economy Velocity (7 Days)</h3>
+                                <p class="card-subtitle">Aggregated balance distribution over time</p>
+                            </div>
+                            <button class="btn-link" onclick="app.navigate('analytics')">Explore &rarr;</button>
+                        </div>
+                        <div class="chart-container" style="height:170px;">
+                            <canvas id="overview-eco-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <div class="panel-card-header">
+                            <div>
+                                <h3>Weekly Player Demographics</h3>
+                                <p class="card-subtitle">Cohort acquisition vs returning retention</p>
+                            </div>
+                            <button class="btn-link" onclick="app.navigate('analytics')">Metrics &rarr;</button>
+                        </div>
+                        <div class="split-stats-grid">
+                            <div class="split-stat">
+                                <span class="split-label">New Players</span>
+                                <span class="split-val text-green" id="ov-new">—</span>
+                                <span class="split-sub">First login this week</span>
+                            </div>
+                            <div class="split-stat">
+                                <span class="split-label">Returning Active</span>
+                                <span class="split-val text-accent" id="ov-ret">—</span>
+                                <span class="split-sub">Re-engaged cohort</span>
+                            </div>
+                            <div class="split-stat">
+                                <span class="split-label">Total Logins</span>
+                                <span class="split-val text-amber" id="ov-sessions">—</span>
+                                <span class="split-sub">Recorded sessions</span>
+                            </div>
+                            <div class="split-stat">
+                                <span class="split-label">Server Stability</span>
+                                <span class="split-val text-emerald">100%</span>
+                                <span class="split-sub">RCON health check</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Activity Feed -->
+                <div class="panel-card" style="margin-top:20px;">
+                    <div class="panel-card-header">
+                        <div>
+                            <h3>Recent Administrative Activity</h3>
+                            <p class="card-subtitle">Audited staff interactions and configuration modifications</p>
+                        </div>
+                        <button class="btn-ghost sm" onclick="app.navigate('logs')">Full Log Stream</button>
+                    </div>
+                    <div id="overview-logs-container" class="activity-feed"></div>
+                </div>
+            </section>
+
+            <!-- ── VIEW: PLAYER DIRECTORY ── -->
+            <section id="view-player" class="view-page">
+                <div class="page-header">
+                    <div>
+                        <h1>Player Directory</h1>
+                        <p>Deep inspection of player wallets, session histories, inventory states, and sanctions</p>
+                    </div>
+                </div>
+
+                <!-- Fast Omnibar -->
+                <div class="search-panel">
+                    <div class="search-input-wrap">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        <input type="text" id="p-search" placeholder="Type username or UUID (e.g. Steve, 8667ba47...)" autocomplete="off"
+                            oninput="app.playerSearchInput(this.value)"
+                            onkeydown="app.playerSearchKeydown(event)">
+                        <div id="p-autocomplete" class="autocomplete-dropdown"></div>
+                    </div>
+                    <button class="btn-primary" onclick="app.loadPlayerDetail()">Inspect Player</button>
+                </div>
+
+                <!-- Player Details -->
                 <div id="player-profile" style="display:none;">
 
-                    <!-- HERO SECTION -->
-                    <div id="player-hero" style="position:relative;background:var(--bg-panel);border:1px solid var(--border-dim);border-radius:4px;overflow:hidden;margin-bottom:16px;min-height:200px;">
-                        <div id="player-hero-bg" style="position:absolute;right:0;top:0;bottom:0;width:320px;background:linear-gradient(to left,rgba(91,106,255,0.08),transparent);display:flex;align-items:center;justify-content:center;overflow:hidden;">
-                            <img id="player-skin-full" src="" alt="" style="height:180px;image-rendering:pixelated;opacity:0.9;filter:drop-shadow(0 0 32px rgba(91,106,255,0.5));" onerror="this.style.display='none'">
+                    <!-- Profile Header Hero -->
+                    <div class="player-hero-card">
+                        <div class="player-hero-avatar">
+                            <img id="player-face" src="" alt="" onerror="this.style.display='none'">
+                            <div id="player-online-dot" class="player-avatar-badge green" title="Currently in-game"></div>
                         </div>
-                        <div style="position:relative;z-index:1;padding:28px 32px;display:flex;align-items:flex-start;gap:20px;">
-                            <div style="position:relative;flex-shrink:0;">
-                                <img id="player-face" src="" alt="" style="width:72px;height:72px;image-rendering:pixelated;border-radius:4px;border:2px solid var(--border-mid);background:var(--bg-raised);" onerror="this.style.display='none'">
-                                <div id="player-online-dot" style="display:none;position:absolute;bottom:-4px;right:-4px;width:16px;height:16px;background:var(--green);border-radius:50%;border:2px solid var(--bg-panel);box-shadow:0 0 8px var(--green);animation:pulse-dot 2s infinite;"></div>
+                        <div class="player-hero-meta">
+                            <div class="player-hero-title">
+                                <h2 id="player-name-hero">—</h2>
+                                <span id="player-online-badge" class="badge-status online">Online</span>
+                                <span id="player-ban-badge" class="badge-status banned">Sanction Active</span>
                             </div>
-                            <div style="flex:1;">
-                                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
-                                    <h2 id="player-name-hero" style="font-size:28px;font-weight:800;letter-spacing:-1px;"></h2>
-                                    <span id="player-online-badge" style="display:none;font-family:'Space Mono',monospace;font-size:9px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,229,160,0.3);padding:2px 8px;border-radius:2px;letter-spacing:1px;">● ONLINE</span>
-                                    <span id="player-ban-badge" style="display:none;font-family:'Space Mono',monospace;font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.3);padding:2px 8px;border-radius:2px;letter-spacing:1px;">⊘ BANNED</span>
-                                </div>
-                                <div id="player-uuid-hero" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:14px;"></div>
-                                <div id="player-rank-badges" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+                            <div id="player-uuid-hero" class="mono text-muted" style="font-size:11px;margin-bottom:10px;">—</div>
+                            <div id="player-rank-badges" class="tag-row"></div>
+                        </div>
+                        <div class="player-hero-actions">
+                            <button class="btn-ghost sm" onclick="app.showPlayerEdit()">Edit Wallet/Level</button>
+                            <button class="btn-danger-ghost sm" onclick="app.quickBan(document.getElementById('p-search').value)">Sanction</button>
+                            <button class="btn-ghost sm" onclick="app.quickRollback(document.getElementById('p-search').value)">Restore Point</button>
+                        </div>
+                    </div>
+
+                    <!-- Meta Strip -->
+                    <div class="player-sub-strip">
+                        <span id="player-first-seen" class="mono text-muted">—</span>
+                        <span class="sub-sep">•</span>
+                        <span id="player-last-seen" class="mono text-muted">—</span>
+                        <span class="sub-sep">•</span>
+                        <span id="player-days-ago" class="mono">—</span>
+                    </div>
+
+                    <!-- Player Stat Cards -->
+                    <div class="metrics-grid mini" id="player-stat-grid" style="margin-top:16px;"></div>
+
+                    <!-- Deep Analytics Trio -->
+                    <div class="grid-deck three-col" style="margin-top:16px;">
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Wealth Intelligence</h4>
                             </div>
-                            <div style="display:flex;flex-direction:column;gap:8px;flex-shrink:0;">
-                                <button class="btn-sm" onclick="app.showPlayerEdit()">EDIT STATS</button>
-                                <button class="btn-sm btn-red" onclick="app.quickBan(document.getElementById('p-search').value)">BAN</button>
-                                <button class="btn-sm" onclick="app.quickRollback(document.getElementById('p-search').value)">ROLLBACK</button>
+                            <div id="player-wealth-analysis" class="data-key-value"></div>
+                        </div>
+
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Percentile Standing</h4>
                             </div>
+                            <div id="player-ranks" class="ranking-bars"></div>
                         </div>
-                        <div style="position:relative;z-index:1;padding:0 32px 20px;display:flex;gap:24px;flex-wrap:wrap;">
-                            <span id="player-first-seen" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
-                            <span id="player-last-seen" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
-                            <span id="player-days-ago" style="font-family:'Space Mono',monospace;font-size:10px;"></span>
-                        </div>
-                    </div>
 
-                    <!-- STAT GRID -->
-                    <div id="player-stat-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
-
-                    <!-- CALCULATED + RANK ROW -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
-                        <div class="card"><div class="card-title">Wealth Analysis</div><div style="display:flex;flex-direction:column;gap:10px;" id="player-wealth-analysis"></div></div>
-                        <div class="card"><div class="card-title">Server Rank</div><div id="player-ranks" style="display:flex;flex-direction:column;gap:10px;"></div></div>
-                        <div class="card"><div class="card-title">Activity</div><div id="player-activity" style="display:flex;flex-direction:column;gap:10px;"></div></div>
-                    </div>
-
-                    <!-- COIN HISTORY CHART -->
-                    <div class="card" style="margin-bottom:16px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                            <div class="card-title" style="margin-bottom:0;">Coin History</div>
-                            <span id="player-wealth-trend" style="font-family:'Space Mono',monospace;font-size:11px;"></span>
-                        </div>
-                        <div style="position:relative;height:160px;"><canvas id="player-coin-chart"></canvas></div>
-                    </div>
-
-                    <!-- SESSIONS + PUNISHMENTS -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Recent Sessions</div></div><div id="player-sessions-list" style="padding:0 20px 16px;"></div></div>
-                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Punishment Record</div></div><div id="player-punishments-list" style="padding:0 20px 16px;"></div></div>
-                    </div>
-
-                    <!-- IP + SECURITY -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">IP History</div></div><div id="player-ip-list" style="padding:0 20px 16px;"></div></div>
-                        <div class="card" style="padding:0;"><div style="padding:20px 20px 0;"><div class="card-title">Security Alerts</div></div><div id="player-security-list" style="padding:0 20px 16px;"></div></div>
-                    </div>
-
-                    <!-- INVENTORY INSPECTOR -->
-                    <div class="card" style="margin-bottom:16px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                            <div class="card-title" style="margin-bottom:0;">Inventory Inspector</div>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <span id="inv-snapshot-time" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
-                                <button class="btn-sm" onclick="app.loadInventoryInspector()">↻ REFRESH</button>
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Session Health</h4>
                             </div>
+                            <div id="player-activity" class="data-key-value"></div>
+                        </div>
+                    </div>
+
+                    <!-- Coin Balance Historical Flow -->
+                    <div class="panel-card" style="margin-top:16px;">
+                        <div class="panel-card-header">
+                            <div>
+                                <h4>Wallet Valuation Trajectory</h4>
+                                <p class="card-subtitle">Historical balance checkpoints recorded on player disconnects</p>
+                            </div>
+                            <span id="player-wealth-trend" class="mono" style="font-size:12px;"></span>
+                        </div>
+                        <div style="height:160px;position:relative;">
+                            <canvas id="player-coin-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Side-by-side Sessions & Sanctions -->
+                    <div class="grid-deck two-col" style="margin-top:16px;">
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Recent Session Log</h4>
+                            </div>
+                            <div id="player-sessions-list" class="striped-list"></div>
                         </div>
 
-                        <!-- Inventory tabs: Current / Timeline -->
-                        <div style="display:flex;gap:0;border-bottom:1px solid var(--border-dim);margin-bottom:16px;">
-                            <button class="inv-tab active" onclick="app.setInvTab('inventory',this)" style="background:none;border:none;padding:8px 14px;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-primary);cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-1px;">INVENTORY</button>
-                            <button class="inv-tab" onclick="app.setInvTab('vault',this)" style="background:none;border:none;padding:8px 14px;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">VAULT</button>
-                            <button class="inv-tab" onclick="app.setInvTab('timeline',this)" style="background:none;border:none;padding:8px 14px;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">TIMELINE</button>
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Punishment &amp; Infraction History</h4>
+                            </div>
+                            <div id="player-punishments-list" class="striped-list"></div>
+                        </div>
+                    </div>
+
+                    <!-- IP Log & Security -->
+                    <div class="grid-deck two-col" style="margin-top:16px;">
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Network IP Fingerprints</h4>
+                            </div>
+                            <div id="player-ip-list" class="striped-list"></div>
                         </div>
 
-                        <!-- INVENTORY TAB -->
-                        <div id="inv-tab-inventory">
-                            <div class="inv-grid-wrap">
-                                <!-- Left: Armor + offhand column -->
-                                <div style="flex-shrink:0;">
-                                    <div class="inv-section-label">Armor</div>
-                                    <div id="inv-armor-grid" class="inv-grid cols1" style="margin-bottom:6px;"></div>
-                                    <div class="inv-section-label">Off</div>
+                        <div class="panel-card">
+                            <div class="panel-card-header compact">
+                                <h4>Security Flag Log</h4>
+                            </div>
+                            <div id="player-security-list" class="striped-list"></div>
+                        </div>
+                    </div>
+
+                    <!-- Inventory & Vault Inspector -->
+                    <div class="panel-card" style="margin-top:16px;">
+                        <div class="panel-card-header">
+                            <div>
+                                <h4>Inventory &amp; Vault Inspector</h4>
+                                <p class="card-subtitle" id="inv-snapshot-time">Snapshot data recorded on logout</p>
+                            </div>
+                            <button class="btn-ghost sm" onclick="app.loadInventoryInspector()">Reload Snapshot</button>
+                        </div>
+
+                        <!-- Subtabs -->
+                        <div class="tab-strip">
+                            <button class="tab-pill active" onclick="app.setInvTab('inventory',this)">Inventory &amp; Armor</button>
+                            <button class="tab-pill" onclick="app.setInvTab('vault',this)">Player Vaults</button>
+                            <button class="tab-pill" onclick="app.setInvTab('timeline',this)">Historical Snapshots</button>
+                        </div>
+
+                        <!-- Inventory View -->
+                        <div id="inv-tab-inventory" class="inv-tab-content">
+                            <div class="inv-inspection-deck">
+                                <div class="inv-equipment-col">
+                                    <span class="inv-header-tag">Armor</span>
+                                    <div id="inv-armor-grid" class="inv-grid cols1"></div>
+                                    <span class="inv-header-tag" style="margin-top:8px;">Offhand</span>
                                     <div id="inv-offhand-slot" class="inv-grid cols1"></div>
                                 </div>
-                                <!-- Right: Hotbar + main inventory -->
-                                <div style="flex-shrink:0;">
-                                    <div class="inv-section-label">Hotbar</div>
-                                    <div id="inv-hotbar-grid" class="inv-grid cols9" style="margin-bottom:10px;"></div>
-                                    <div class="inv-section-label">Inventory</div>
+                                <div class="inv-main-col">
+                                    <span class="inv-header-tag">Hotbar</span>
+                                    <div id="inv-hotbar-grid" class="inv-grid cols9"></div>
+                                    <span class="inv-header-tag" style="margin-top:10px;">Storage Grid</span>
                                     <div id="inv-main-grid" class="inv-grid cols9"></div>
                                 </div>
                             </div>
-                            <div id="inv-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No inventory snapshot yet — saves on player quit.</div>
+                            <div id="inv-empty-msg" class="empty-state-banner" style="display:none;">
+                                No inventory snapshot on record. Snapshots generate automatically when players log out.
+                            </div>
                         </div>
 
-                        <!-- VAULT TAB -->
-                        <div id="inv-tab-vault" style="display:none;">
-                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="vault-page-tabs"></div>
+                        <!-- Vault View -->
+                        <div id="inv-tab-vault" class="inv-tab-content" style="display:none;">
+                            <div id="vault-page-tabs" class="page-pills"></div>
                             <div id="vault-grid" class="inv-grid cols9"></div>
-                            <div id="vault-empty-msg" style="display:none;padding:32px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// No vault snapshots yet.</div>
+                            <div id="vault-empty-msg" class="empty-state-banner" style="display:none;">
+                                No vault storage snapshots recorded for this player.
+                            </div>
                         </div>
 
-                        <!-- TIMELINE TAB -->
-                        <div id="inv-tab-timeline" style="display:none;">
-                            <div id="inv-timeline-list"></div>
+                        <!-- Timeline View -->
+                        <div id="inv-tab-timeline" class="inv-tab-content" style="display:none;">
+                            <div id="inv-timeline-list" class="striped-list"></div>
                         </div>
 
-                        <!-- Item tooltip -->
-                        <div id="inv-tooltip" style="display:none;position:fixed;z-index:9000;pointer-events:none;background:#100010;border:2px solid #5000be;border-radius:3px;padding:8px 10px;max-width:300px;box-shadow:4px 4px 0 rgba(0,0,0,0.6);"></div>
+                        <!-- Minecraft Item Tooltip Overlay -->
+                        <div id="inv-tooltip" class="mc-tooltip-box" style="display:none;"></div>
                     </div>
 
-                    <!-- INLINE EDIT -->
-                    <div id="player-edit-panel" style="display:none;" class="card">
-                        <div class="card-title">Edit Record <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--red);margin-left:8px;">// Admin only</span></div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                            <div class="input-group"><label>Coin Balance</label><input type="number" id="inp-coins"></div>
-                            <div class="input-group"><label>Player Level</label><input type="number" id="inp-level"></div>
+                    <!-- Inline Edit Modal/Drawer -->
+                    <div id="player-edit-panel" class="panel-card form-drawer" style="display:none;">
+                        <div class="panel-card-header">
+                            <div>
+                                <h4>Modify Player Profile</h4>
+                                <p class="card-subtitle">Direct adjustments to database columns</p>
+                            </div>
                         </div>
-                        <div class="form-actions">
-                            <button class="btn-primary" style="width:auto;" onclick="app.savePlayer()">SAVE CHANGES</button>
-                            <button class="btn-sm" onclick="document.getElementById('player-edit-panel').style.display='none'">CANCEL</button>
+                        <div class="form-grid two-col">
+                            <div class="input-group">
+                                <label for="inp-coins">Coin Balance</label>
+                                <input type="number" id="inp-coins">
+                            </div>
+                            <div class="input-group">
+                                <label for="inp-level">Player Level</label>
+                                <input type="number" id="inp-level">
+                            </div>
+                        </div>
+                        <div class="btn-row" style="margin-top:16px;">
+                            <button class="btn-primary" onclick="app.savePlayer()">Save Modifications</button>
+                            <button class="btn-ghost" onclick="document.getElementById('player-edit-panel').style.display='none'">Cancel</button>
                         </div>
                         <input type="hidden" id="val-uuid">
                         <span id="val-name" style="display:none;"></span>
                     </div>
-                </div>
-            </div>
 
-            <!-- AUDIT LOGS -->
-            <div id="view-logs" class="view-page">
+                </div>
+            </section>
+
+            <!-- ── VIEW: LIVE PLAYERS ── -->
+            <section id="view-players" class="view-page">
                 <div class="page-header">
-                    <h1>Audit Logs</h1>
-                    <p>Administrative actions log — last 50 entries</p>
-                </div>
-                <div class="card" style="padding:0;">
-                    <div id="logs-table-container">
-                        <p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading logs...</p>
+                    <div>
+                        <h1>Live Server Players</h1>
+                        <p>Real-time monitor of sessions currently connected to the game server</p>
+                    </div>
+                    <div class="header-badges">
+                        <span id="online-count-badge" class="badge-status online">0 Online</span>
                     </div>
                 </div>
-            </div>
 
-            <!-- STAFF MANAGEMENT -->
-            <div id="view-staff" class="view-page">
+                <div class="panel-card table-panel">
+                    <div id="online-players-container"></div>
+                </div>
+            </section>
+
+            <!-- ── VIEW: SANCTIONS & MODERATION ── -->
+            <section id="view-bans" class="view-page">
                 <div class="page-header">
-                    <h1>Staff Management</h1>
-                    <p>Manage panel access, roles, and invite codes</p>
+                    <div>
+                        <h1>Sanctions &amp; Disciplinary</h1>
+                        <p>Issue temporary suspensions, permanent bans, and formal warnings</p>
+                    </div>
                 </div>
-                <!-- Create account -->
-                <div class="card" style="margin-bottom:16px;">
-                    <div class="card-title">Create Account</div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;align-items:end;">
-                        <div class="input-group" style="margin:0;"><label>Username</label><input type="text" id="new-staff-user" placeholder="Username..."></div>
-                        <div class="input-group" style="margin:0;"><label>Password</label><input type="password" id="new-staff-pass" placeholder="Password..."></div>
-                        <div class="input-group" style="margin:0;">
-                            <label>Role</label>
-                            <select id="new-staff-role">
-                                <option value="mod">Mod</option>
-                                <option value="dev">Dev</option>
-                                <option value="admin">Admin</option>
-                            </select>
+
+                <div class="panel-card form-panel" style="margin-bottom:20px;">
+                    <div class="panel-card-header">
+                        <h4>Issue New Sanction</h4>
+                    </div>
+                    <div class="form-grid three-col">
+                        <div class="input-group">
+                            <label for="ban-target">Target Player</label>
+                            <input type="text" id="ban-target" placeholder="Exact username">
                         </div>
-                        <div class="input-group" style="margin:0;"><label>Invite Code</label><input type="text" id="new-staff-invite" placeholder="Required..."></div>
-                    </div>
-                    <div style="margin-top:16px;">
-                        <button class="btn-primary" style="width:auto;" onclick="app.createStaff()">CREATE ACCOUNT</button>
-                    </div>
-                </div>
-                <!-- Staff table -->
-                <div class="card" style="padding:0;">
-                    <div style="padding:20px 24px 0;"><div class="card-title">Team Members</div></div>
-                    <div id="staff-table-container"><p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</p></div>
-                </div>
-            </div>
-
-            <!-- SETTINGS -->
-            <div id="view-settings" class="view-page">
-                <div class="page-header">
-                    <h1>Settings</h1>
-                    <p>Customise your panel experience</p>
-                </div>
-
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                    <!-- Appearance -->
-                    <div class="card">
-                        <div class="card-title">Appearance</div>
-
-                        <div style="margin-bottom:24px;">
-                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Theme</label>
-                            <div style="display:flex;gap:8px;">
-                                <button class="theme-btn" data-theme="dark" onclick="app.setTheme('dark',this)">Dark</button>
-                                <button class="theme-btn" data-theme="midnight" onclick="app.setTheme('midnight',this)">Midnight</button>
-                                <button class="theme-btn" data-theme="light" onclick="app.setTheme('light',this)">Light</button>
-                            </div>
-                        </div>
-
-                        <div style="margin-bottom:24px;">
-                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Accent Color</label>
-                            <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                                <button class="accent-swatch" data-accent="indigo" onclick="app.setAccent('indigo',this)" style="background:#5b6aff;" title="Indigo"></button>
-                                <button class="accent-swatch" data-accent="amber" onclick="app.setAccent('amber',this)" style="background:#ffb830;" title="Amber"></button>
-                                <button class="accent-swatch" data-accent="rose" onclick="app.setAccent('rose',this)" style="background:#ff4f8b;" title="Rose"></button>
-                                <button class="accent-swatch" data-accent="cyan" onclick="app.setAccent('cyan',this)" style="background:#00d4ff;" title="Cyan (coming soon)" disabled></button>
-                                <button class="accent-swatch" data-accent="emerald" onclick="app.setAccent('emerald',this)" style="background:#00e5a0;" title="Emerald (coming soon)" disabled></button>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Text Size</label>
-                            <div style="display:flex;align-items:center;gap:16px;">
-                                <input type="range" id="text-size-slider" min="12" max="18" step="1" value="14" oninput="app.setTextSize(this.value)" style="flex:1;">
-                                <span id="text-size-label" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);min-width:36px;">14px</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Preferences -->
-                    <div class="card">
-                        <div class="card-title">Preferences</div>
-
-                        <div style="margin-bottom:20px;">
-                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Date Format</label>
-                            <div style="display:flex;gap:8px;">
-                                <button class="theme-btn" data-fmt="en-GB" onclick="app.setDateFormat('en-GB',this)">DD/MM/YYYY</button>
-                                <button class="theme-btn" data-fmt="en-US" onclick="app.setDateFormat('en-US',this)">MM/DD/YYYY</button>
-                                <button class="theme-btn" data-fmt="iso" onclick="app.setDateFormat('iso',this)">ISO 8601</button>
-                            </div>
-                        </div>
-
-                        <div style="margin-bottom:20px;">
-                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Sidebar</label>
-                            <div style="display:flex;gap:8px;">
-                                <button class="theme-btn" data-sidebar="expanded" onclick="app.setSidebar('expanded',this)">Expanded</button>
-                                <button class="theme-btn" data-sidebar="compact" onclick="app.setSidebar('compact',this)">Compact</button>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:12px;">Anomaly Threshold</label>
-                            <div style="display:flex;align-items:center;gap:16px;">
-                                <input type="range" id="anomaly-slider" min="5" max="50" step="5" value="20" oninput="app.setAnomalyThreshold(this.value)" style="flex:1;">
-                                <span id="anomaly-label" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);min-width:36px;">20%</span>
-                            </div>
-                            <p style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:8px;">// Flag economy changes above this % as anomalies</p>
-                        </div>
-                    </div>
-
-                    <!-- Account -->
-                    <div class="card">
-                        <div class="card-title">Your Account</div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-                            <div class="input-group" style="margin:0;"><label>New Password</label><input type="password" id="change-pass" placeholder="New password..."></div>
-                            <div class="input-group" style="margin:0;"><label>Confirm Password</label><input type="password" id="change-pass-confirm" placeholder="Confirm..."></div>
-                        </div>
-                        <button class="btn-primary" style="width:auto;" onclick="app.changePassword()">UPDATE PASSWORD</button>
-                    </div>
-
-                    <!-- Danger zone -->
-                    <div class="card" style="border-color:rgba(255,71,87,0.2);">
-                        <div class="card-title" style="color:var(--red);">Danger Zone</div>
-                        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);margin-bottom:16px;line-height:1.7;">// These actions are irreversible. Proceed with caution.</p>
-                        <div style="display:flex;flex-direction:column;gap:10px;">
-                            <button class="btn-sm btn-red" onclick="app.clearEconomySnapshots()">PURGE ECONOMY SNAPSHOTS</button>
-                            <button class="btn-sm btn-red" onclick="app.clearSessionLogs()">PURGE SESSION LOGS</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ANALYTICS -->
-            <div id="view-analytics" class="view-page">
-                <div class="page-header">
-                    <h1>Analytics</h1>
-                    <p>Economy, player activity, and retention metrics</p>
-                </div>
-
-                <!-- Time range selector -->
-                <div style="display:flex;gap:8px;margin-bottom:24px;align-items:center;">
-                    <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:1px;">RANGE:</span>
-                    <button class="btn-sm range-btn active" data-days="7"  onclick="app.setAnalyticsRange(7,this)">7D</button>
-                    <button class="btn-sm range-btn"        data-days="30" onclick="app.setAnalyticsRange(30,this)">30D</button>
-                    <button class="btn-sm range-btn"        data-days="90" onclick="app.setAnalyticsRange(90,this)">90D</button>
-                    <button class="btn-sm" style="margin-left:auto;" onclick="app.loadAnalytics()">↻ REFRESH</button>
-                </div>
-
-                <!-- KPI row -->
-                <div class="stats-grid" style="margin-bottom:24px;" id="analytics-kpis">
-                    <div class="stat-card"><div class="stat-card-icon">◈</div><span class="stat-label">Peak Economy</span><div class="stat-value text-gold" id="a-peak-eco">—</div></div>
-                    <div class="stat-card"><div class="stat-card-icon" style="background:var(--green-dim);border-color:rgba(0,229,160,0.2);">▲</div><span class="stat-label">Economy Growth</span><div class="stat-value text-green" id="a-eco-growth">—</div></div>
-                    <div class="stat-card"><div class="stat-card-icon" style="background:var(--purple-dim);border-color:rgba(176,107,255,0.2);">◆</div><span class="stat-label">Total Sessions</span><div class="stat-value text-purple" id="a-sessions">—</div></div>
-                    <div class="stat-card"><div class="stat-card-icon" style="background:var(--amber-dim);border-color:rgba(255,184,48,0.2);">⧗</div><span class="stat-label">Avg Session</span><div class="stat-value text-gold" id="a-avg-session">—</div></div>
-                </div>
-
-                <!-- Inflation chart — full width, prominent -->
-                <div class="card" style="margin-bottom:16px;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-                        <div class="card-title" style="margin-bottom:0;">Economy Inflation</div>
-                        <div style="display:flex;gap:16px;align-items:center;">
-                            <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">
-                                <span style="display:inline-block;width:20px;height:2px;background:var(--accent);vertical-align:middle;margin-right:6px;"></span>Total Coins
-                            </span>
-                            <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);">
-                                <span style="display:inline-block;width:20px;height:2px;background:var(--green);vertical-align:middle;margin-right:6px;border-top:2px dashed var(--green);"></span>Players Online
-                            </span>
-                            <span id="eco-anomaly-badge" style="display:none;font-family:'Space Mono',monospace;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.3);padding:3px 10px;border-radius:2px;letter-spacing:1px;">⚠ ANOMALY DETECTED</span>
-                        </div>
-                    </div>
-                    <div style="position:relative;height:340px;">
-                        <canvas id="eco-chart"></canvas>
-                    </div>
-                    <!-- Spike annotations row -->
-                    <div id="eco-annotations" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"></div>
-                </div>
-
-                <!-- Retention + Heatmap row -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-                    <div class="card">
-                        <div class="card-title">Player Retention</div>
-                        <div style="position:relative;height:200px;">
-                            <canvas id="retention-chart"></canvas>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-title">Activity Heatmap <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);font-weight:400;margin-left:8px;">sessions by hour × day (90d)</span></div>
-                        <div id="heatmap-container" style="margin-top:8px;"></div>
-                    </div>
-                </div>
-
-                <!-- Leaderboards -->
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
-                    <div class="card" style="padding:0;">
-                        <div style="padding:20px 20px 0;"><div class="card-title">Top Wealth</div></div>
-                        <div id="lb-coins"></div>
-                    </div>
-                    <div class="card" style="padding:0;">
-                        <div style="padding:20px 20px 0;"><div class="card-title">Top Playtime</div></div>
-                        <div id="lb-playtime"></div>
-                    </div>
-                    <div class="card" style="padding:0;">
-                        <div style="padding:20px 20px 0;"><div class="card-title">Top Level</div></div>
-                        <div id="lb-level"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ONLINE PLAYERS -->
-            <div id="view-players" class="view-page">
-                <div class="page-header">
-                    <h1>Online Players</h1>
-                    <p>Live view of players currently on the server</p>
-                </div>
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                    <span class="status-dot"></span>
-                    <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);">AUTO-REFRESHING EVERY 15s</span>
-                    <span id="online-count-badge" style="font-family:'Space Mono',monospace;font-size:11px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,229,160,0.2);padding:3px 10px;border-radius:2px;">0 ONLINE</span>
-                    <button class="btn-sm" onclick="app.loadOnlinePlayers()">REFRESH</button>
-                </div>
-                <div class="card" style="padding:0;">
-                    <div id="online-players-container">
-                        <p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- BANS & WARNINGS -->
-            <div id="view-bans" class="view-page">
-                <div class="page-header">
-                    <h1>Bans &amp; Warnings</h1>
-                    <p>Issue and manage player punishments</p>
-                </div>
-                <div class="card" style="margin-bottom:16px;">
-                    <div class="card-title">Issue Punishment</div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
-                        <div class="input-group" style="margin:0;">
-                            <label>Player Name</label>
-                            <input type="text" id="ban-target" placeholder="Username...">
-                        </div>
-                        <div class="input-group" style="margin:0;">
-                            <label>Type</label>
+                        <div class="input-group">
+                            <label for="ban-type">Sanction Type</label>
                             <select id="ban-type" onchange="app.toggleDuration()">
-                                <option value="warn">Warning</option>
+                                <option value="warn">Formal Warning</option>
+                                <option value="tempban">Temporary Suspension</option>
                                 <option value="ban">Permanent Ban</option>
-                                <option value="tempban">Temp Ban</option>
                             </select>
                         </div>
-                        <div class="input-group" style="margin:0;" id="duration-group" style="display:none;">
-                            <label>Duration</label>
+                        <div class="input-group" id="duration-group" style="opacity:0.3;pointer-events:none;">
+                            <label for="ban-duration">Duration</label>
                             <input type="text" id="ban-duration" placeholder="e.g. 7d, 24h">
                         </div>
                     </div>
-                    <div class="input-group">
-                        <label>Reason</label>
-                        <input type="text" id="ban-reason" placeholder="State the reason...">
+                    <div class="input-group" style="margin-top:12px;">
+                        <label for="ban-reason">Reason &amp; Evidence Note</label>
+                        <input type="text" id="ban-reason" placeholder="State reason for audit trail...">
                     </div>
                     <div style="margin-top:16px;">
-                        <button class="btn-primary btn-red" onclick="app.issuePunishment()">ISSUE PUNISHMENT</button>
+                        <button class="btn-danger" onclick="app.issuePunishment()">Apply Sanction</button>
                     </div>
                 </div>
-                <div class="card" style="padding:0;">
-                    <div style="padding:20px 24px 0;"><div class="card-title">Active Punishments</div></div>
-                    <div id="bans-table-container">
-                        <p style="padding:24px;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</p>
-                    </div>
-                </div>
-            </div>
 
-            <!-- SERVER CONSOLE -->
-            <div id="view-console" class="view-page">
+                <div class="panel-card table-panel">
+                    <div class="panel-card-header">
+                        <h4>Active Sanction Log</h4>
+                    </div>
+                    <div id="bans-table-container"></div>
+                </div>
+            </section>
+
+            <!-- ── VIEW: AUDIT LOGS ── -->
+            <section id="view-logs" class="view-page">
                 <div class="page-header">
-                    <h1>Server Console</h1>
-                    <p>Execute commands directly on the server — admin only</p>
-                </div>
-                <div class="card" style="padding:0;display:flex;flex-direction:column;height:calc(100vh - 220px);">
-                    <div style="padding:16px 20px;border-bottom:1px solid var(--border-dim);display:flex;align-items:center;gap:10px;">
-                        <span class="status-dot"></span>
-                        <span style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--text-secondary);">CONSOLE ACTIVE</span>
-                        <button class="btn-sm" style="margin-left:auto;" onclick="app.clearConsole()">CLEAR</button>
-                    </div>
-                    <div id="console-output" style="flex:1;overflow-y:auto;padding:16px 20px;font-family:'Space Mono',monospace;font-size:12px;line-height:1.8;color:var(--text-secondary);"></div>
-                    <div style="padding:16px 20px;border-top:1px solid var(--border-dim);display:flex;gap:10px;align-items:center;">
-                        <span style="font-family:'Space Mono',monospace;font-size:12px;color:var(--accent);flex-shrink:0;">$</span>
-                        <input type="text" id="console-input" placeholder="Enter command..." style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border-mid);border-radius:0;padding:6px 0;font-family:'Space Mono',monospace;font-size:13px;" onkeydown="if(event.key==='Enter')app.runCommand()">
-                        <button class="btn-primary" style="width:auto;" onclick="app.runCommand()">RUN</button>
+                    <div>
+                        <h1>Audit Trail</h1>
+                        <p>Immutable log of administrative interventions, rollbacks, and profile updates</p>
                     </div>
                 </div>
-            </div>
+                <div class="panel-card table-panel">
+                    <div id="logs-table-container"></div>
+                </div>
+            </section>
 
-            <!-- SECURITY -->
-            <div id="view-security" class="view-page">
+            <!-- ── VIEW: SERVER CONSOLE ── -->
+            <section id="view-console" class="view-page">
                 <div class="page-header">
-                    <h1>Security</h1>
-                    <p>Dupe detection, rollback, and alt account analysis</p>
+                    <div>
+                        <h1>Server Terminal (RCON)</h1>
+                        <p>Execute administrative commands directly over secure remote bridge</p>
+                    </div>
                 </div>
 
-                <!-- Tabs -->
-                <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border-dim);padding-bottom:0;">
-                    <button class="sec-tab active" onclick="app.setSecTab('alerts',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-secondary);cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-1px;">ALERTS</button>
-                    <button class="sec-tab" onclick="app.setSecTab('analysis',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">ANALYSIS</button>
-                    <button class="sec-tab" onclick="app.setSecTab('rollback',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">ROLLBACK</button>
-                    <button class="sec-tab" onclick="app.setSecTab('settings-sec',this)" style="background:none;border:none;padding:10px 16px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;">CONFIG</button>
+                <div class="terminal-card">
+                    <div class="terminal-header">
+                        <div class="terminal-title">
+                            <span class="pulse-dot green"></span>
+                            <span>RCON Session Established</span>
+                        </div>
+                        <button class="btn-ghost sm" onclick="app.clearConsole()">Clear Window</button>
+                    </div>
+                    <div id="console-output" class="terminal-body"></div>
+                    <div class="terminal-footer">
+                        <span class="prompt-sym">&gt;</span>
+                        <input type="text" id="console-input" placeholder="Execute command (e.g. say Hello, gamemode survival)..." onkeydown="if(event.key==='Enter')app.runCommand()">
+                        <button class="btn-primary sm" onclick="app.runCommand()">Send</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── VIEW: SECURITY RADAR ── -->
+            <section id="view-security" class="view-page">
+                <div class="page-header">
+                    <div>
+                        <h1>Security Radar</h1>
+                        <p>Duplication detection, abnormal velocity scans, shared network detection, and snapshot rollbacks</p>
+                    </div>
+                </div>
+
+                <div class="tab-strip">
+                    <button class="tab-pill active" onclick="app.setSecTab('alerts',this)">Active Alerts</button>
+                    <button class="tab-pill" onclick="app.setSecTab('analysis',this)">Heuristic Analysis</button>
+                    <button class="tab-pill" onclick="app.setSecTab('rollback',this)">State Rollback</button>
+                    <button class="tab-pill" onclick="app.setSecTab('settings-sec',this)">Configuration</button>
                 </div>
 
                 <!-- ALERTS TAB -->
                 <div id="sec-alerts">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-                        <label style="display:flex;align-items:center;gap:8px;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="show-resolved" onchange="app.loadAlerts()"> Show resolved
+                    <div class="sub-header-bar">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="show-resolved" onchange="app.loadAlerts()">
+                            <span>Include resolved alerts</span>
                         </label>
-                        <button class="btn-sm" style="margin-left:auto;" onclick="app.resolveAllAlerts()">RESOLVE ALL</button>
-                        <button class="btn-sm" onclick="app.loadAlerts()">↻ REFRESH</button>
+                        <div class="btn-row">
+                            <button class="btn-ghost sm" onclick="app.resolveAllAlerts()">Resolve All</button>
+                            <button class="btn-ghost sm" onclick="app.loadAlerts()">Refresh</button>
+                        </div>
                     </div>
-                    <div id="alerts-container">
-                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);padding:24px 0;">Loading...</p>
-                    </div>
+                    <div id="alerts-container"></div>
                 </div>
 
                 <!-- ANALYSIS TAB -->
                 <div id="sec-analysis" style="display:none;">
-                    <div style="display:flex;gap:10px;margin-bottom:20px;">
-                        <button class="btn-primary" style="width:auto;" onclick="app.loadAnalysis()">RUN ANALYSIS</button>
-                        <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);align-self:center;">// Scans snapshots, sessions and IP logs</span>
+                    <div class="sub-header-bar">
+                        <button class="btn-primary" onclick="app.loadAnalysis()">Run Full Diagnostic Scan</button>
+                        <span class="text-muted" style="font-size:12px;">Scans wallet jumps, IP intersections, and volume anomalies</span>
                     </div>
-                    <div id="analysis-container">
-                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Press Run Analysis to scan for anomalies.</p>
-                    </div>
+                    <div id="analysis-container"></div>
                 </div>
 
                 <!-- ROLLBACK TAB -->
                 <div id="sec-rollback" style="display:none;">
-                    <div class="card" style="margin-bottom:16px;">
-                        <div class="card-title">Select Player</div>
-                        <div style="display:flex;gap:10px;">
-                            <input type="text" id="rollback-search" placeholder="Player name..." style="flex:1;">
-                            <button class="btn-primary" style="width:auto;" onclick="app.loadRollbackTimeline()">LOAD TIMELINE</button>
+                    <div class="panel-card" style="margin-bottom:16px;">
+                        <div class="panel-card-header">
+                            <h4>Target Player Rollback</h4>
+                        </div>
+                        <div class="search-input-wrap inline">
+                            <input type="text" id="rollback-search" placeholder="Enter player username...">
+                            <button class="btn-primary" onclick="app.loadRollbackTimeline()">Load Restore Points</button>
                         </div>
                     </div>
                     <div id="rollback-container"></div>
@@ -681,149 +685,321 @@
 
                 <!-- CONFIG TAB -->
                 <div id="sec-settings-sec" style="display:none;">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                        <div class="card">
-                            <div class="card-title">Discord Webhook</div>
+                    <div class="grid-deck two-col">
+                        <div class="panel-card">
+                            <div class="panel-card-header">
+                                <h4>Webhook Alerts</h4>
+                            </div>
                             <div class="input-group">
-                                <label>Webhook URL</label>
+                                <label for="webhook-url">Discord Webhook URL</label>
                                 <input type="text" id="webhook-url" placeholder="https://discord.com/api/webhooks/...">
                             </div>
-                            <div style="display:flex;gap:8px;margin-top:12px;">
-                                <button class="btn-primary" style="width:auto;" onclick="app.saveWebhook()">SAVE</button>
-                                <button class="btn-sm" onclick="app.testWebhook()">TEST</button>
+                            <div class="btn-row" style="margin-top:16px;">
+                                <button class="btn-primary" onclick="app.saveWebhook()">Save URL</button>
+                                <button class="btn-ghost" onclick="app.testWebhook()">Test Dispatch</button>
                             </div>
                         </div>
-                        <div class="card">
-                            <div class="card-title">Detection Thresholds</div>
-                            <div class="input-group">
-                                <label>Velocity Alert (coins per session)</label>
-                                <input type="number" id="threshold-velocity" value="100000" placeholder="100000">
+
+                        <div class="panel-card">
+                            <div class="panel-card-header">
+                                <h4>Detection Sensitivities</h4>
                             </div>
                             <div class="input-group">
-                                <label>Snapshot Delta Alert (coins)</label>
-                                <input type="number" id="threshold-delta" value="50000" placeholder="50000">
+                                <label for="threshold-velocity">Session Velocity Alert (Coins)</label>
+                                <input type="number" id="threshold-velocity" value="100000">
                             </div>
-                            <p style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.7;">// These values are used by the Skript file.<br>// Update brume_security.sk to match after saving.</p>
+                            <div class="input-group" style="margin-top:12px;">
+                                <label for="threshold-delta">Single Snapshot Jump (Coins)</label>
+                                <input type="number" id="threshold-delta" value="50000">
+                            </div>
+                            <p class="text-muted" style="font-size:11px;margin-top:12px;line-height:1.5;">
+                                These boundaries calibrate both the panel's heuristic scanner and alerts fired by the server Skript.
+                            </p>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <!-- ITEM ARCHITECT -->
-            <div id="view-generator" class="view-page">
+            <!-- ── VIEW: ECONOMY & ANALYTICS ── -->
+            <section id="view-analytics" class="view-page">
                 <div class="page-header">
-                    <h1>Item Architect</h1>
-                    <p>Design and generate custom item configurations</p>
-                </div>
-                <div class="card" style="display:flex;align-items:center;gap:24px;padding:32px;">
-                    <div style="font-size:48px;">⚔</div>
                     <div>
-                        <h2 style="font-size:20px;font-weight:800;margin-bottom:8px;">Open Item Editor</h2>
-                        <p style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);margin-bottom:16px;">Visual item builder with live Minecraft tooltip preview and auto-generated Skript code.</p>
-                        <a href="/item-editor.html" target="_blank" class="btn-primary" style="text-decoration:none;display:inline-block;width:auto;padding:12px 24px;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;">OPEN ITEM ARCHITECT →</a>
+                        <h1>Economy &amp; Player Growth</h1>
+                        <p>Longitudinal currency inflation, retention heatmaps, and ranking leaderboards</p>
+                    </div>
+                    <div class="time-range-group">
+                        <button class="range-btn active" data-days="7" onclick="app.setAnalyticsRange(7,this)">7 Days</button>
+                        <button class="range-btn" data-days="30" onclick="app.setAnalyticsRange(30,this)">30 Days</button>
+                        <button class="range-btn" data-days="90" onclick="app.setAnalyticsRange(90,this)">90 Days</button>
                     </div>
                 </div>
-            </div>
 
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-header"><span class="metric-title">Peak Currency</span></div>
+                        <div class="metric-body"><span class="metric-value text-gold" id="a-peak-eco">—</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-header"><span class="metric-title">Period Inflation</span></div>
+                        <div class="metric-body"><span class="metric-value text-green" id="a-eco-growth">—</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-header"><span class="metric-title">Total Sessions</span></div>
+                        <div class="metric-body"><span class="metric-value text-purple" id="a-sessions">—</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-header"><span class="metric-title">Avg Session</span></div>
+                        <div class="metric-body"><span class="metric-value text-accent" id="a-avg-session">—</span></div>
+                    </div>
+                </div>
+
+                <!-- Main Inflation Chart -->
+                <div class="panel-card" style="margin-top:20px;">
+                    <div class="panel-card-header">
+                        <div>
+                            <h3>Economy Supply vs Concurrency</h3>
+                            <p class="card-subtitle">Total coins in circulation graphed against concurrent player density</p>
+                        </div>
+                        <div class="legend-pills">
+                            <span class="legend-pill"><span class="color-dot accent"></span> Total Coins</span>
+                            <span class="legend-pill"><span class="color-dot emerald"></span> Players Online</span>
+                            <span id="eco-anomaly-badge" class="badge-status banned" style="display:none;">Anomaly Flagged</span>
+                        </div>
+                    </div>
+                    <div style="height:320px;position:relative;">
+                        <canvas id="eco-chart"></canvas>
+                    </div>
+                    <div id="eco-annotations" class="tag-row" style="margin-top:16px;"></div>
+                </div>
+
+                <!-- Retention & Heatmap -->
+                <div class="grid-deck two-col" style="margin-top:20px;">
+                    <div class="panel-card">
+                        <div class="panel-card-header compact">
+                            <h4>Weekly Player Cohorts</h4>
+                        </div>
+                        <div style="height:220px;position:relative;">
+                            <canvas id="retention-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <div class="panel-card-header compact">
+                            <h4>Activity Density Heatmap (Hour &times; Day)</h4>
+                        </div>
+                        <div id="heatmap-container" style="margin-top:12px;overflow-x:auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Leaderboards -->
+                <div class="grid-deck three-col" style="margin-top:20px;">
+                    <div class="panel-card table-panel">
+                        <div class="panel-card-header compact"><h4>Top Wealth</h4></div>
+                        <div id="lb-coins"></div>
+                    </div>
+                    <div class="panel-card table-panel">
+                        <div class="panel-card-header compact"><h4>Top Playtime</h4></div>
+                        <div id="lb-playtime"></div>
+                    </div>
+                    <div class="panel-card table-panel">
+                        <div class="panel-card-header compact"><h4>Top Level</h4></div>
+                        <div id="lb-level"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── VIEW: STAFF MANAGEMENT ── -->
+            <section id="view-staff" class="view-page">
+                <div class="page-header">
+                    <div>
+                        <h1>Staff Access Control</h1>
+                        <p>Manage panel user accounts, role authorizations, and token lifecycles</p>
+                    </div>
+                </div>
+
+                <div class="panel-card form-panel" style="margin-bottom:20px;">
+                    <div class="panel-card-header">
+                        <h4>Create Staff Account</h4>
+                    </div>
+                    <div class="form-grid four-col">
+                        <div class="input-group">
+                            <label for="new-staff-user">Username</label>
+                            <input type="text" id="new-staff-user" placeholder="Username">
+                        </div>
+                        <div class="input-group">
+                            <label for="new-staff-pass">Password</label>
+                            <input type="password" id="new-staff-pass" placeholder="Password">
+                        </div>
+                        <div class="input-group">
+                            <label for="new-staff-role">Role</label>
+                            <select id="new-staff-role">
+                                <option value="mod">Moderator</option>
+                                <option value="dev">Developer</option>
+                                <option value="admin">Administrator</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="new-staff-invite">Invite Code</label>
+                            <input type="text" id="new-staff-invite" placeholder="Master Invite Key">
+                        </div>
+                    </div>
+                    <div style="margin-top:16px;">
+                        <button class="btn-primary" onclick="app.createStaff()">Create Account</button>
+                    </div>
+                </div>
+
+                <div class="panel-card table-panel">
+                    <div class="panel-card-header">
+                        <h4>Active Staff Members</h4>
+                    </div>
+                    <div id="staff-table-container"></div>
+                </div>
+            </section>
+
+            <!-- ── VIEW: SETTINGS ── -->
+            <section id="view-settings" class="view-page">
+                <div class="page-header">
+                    <div>
+                        <h1>Workstation Settings</h1>
+                        <p>Customize display parameters and personal account security</p>
+                    </div>
+                </div>
+
+                <div class="grid-deck two-col">
+                    <div class="panel-card">
+                        <div class="panel-card-header"><h4>Appearance &amp; Palette</h4></div>
+                        <div class="setting-row">
+                            <span class="setting-title">Theme Profile</span>
+                            <div class="btn-group">
+                                <button class="theme-btn" data-theme="dark" onclick="app.setTheme('dark',this)">Obsidian</button>
+                                <button class="theme-btn" data-theme="midnight" onclick="app.setTheme('midnight',this)">Midnight</button>
+                                <button class="theme-btn" data-theme="light" onclick="app.setTheme('light',this)">Clean Light</button>
+                            </div>
+                        </div>
+
+                        <div class="setting-row" style="margin-top:16px;">
+                            <span class="setting-title">Accent Color</span>
+                            <div class="swatch-row">
+                                <button class="accent-swatch" data-accent="indigo" onclick="app.setAccent('indigo',this)" style="background:#5b6aff;"></button>
+                                <button class="accent-swatch" data-accent="amber" onclick="app.setAccent('amber',this)" style="background:#ffb830;"></button>
+                                <button class="accent-swatch" data-accent="rose" onclick="app.setAccent('rose',this)" style="background:#ff4f8b;"></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <div class="panel-card-header"><h4>Change Password</h4></div>
+                        <div class="input-group">
+                            <label for="change-pass">New Password</label>
+                            <input type="password" id="change-pass" placeholder="Min 8 characters">
+                        </div>
+                        <div class="input-group" style="margin-top:12px;">
+                            <label for="change-pass-confirm">Confirm Password</label>
+                            <input type="password" id="change-pass-confirm" placeholder="Repeat password">
+                        </div>
+                        <div style="margin-top:16px;">
+                            <button class="btn-primary" onclick="app.changePassword()">Update Password</button>
+                        </div>
+                    </div>
+
+                    <div class="panel-card danger-panel" style="grid-column:1 / -1;">
+                        <div class="panel-card-header">
+                            <h4 class="text-danger">Danger Zone</h4>
+                        </div>
+                        <p class="text-muted" style="font-size:12px;margin-bottom:16px;">Irreversible administrative cache purges.</p>
+                        <div class="btn-row">
+                            <button class="btn-danger-ghost" onclick="app.clearEconomySnapshots()">Purge Economy Snapshots</button>
+                            <button class="btn-danger-ghost" onclick="app.clearSessionLogs()">Purge Session Logs</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
-    <!-- ═══ GLOBAL SEARCH OVERLAY ═══ -->
-    <div id="search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:flex-start;justify-content:center;padding-top:100px;" onclick="if(event.target===this)app.closeSearch()">
-        <div style="width:100%;max-width:620px;background:var(--bg-panel);border:1px solid var(--border-bright);border-radius:4px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6);">
-            <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border-dim);">
-                <span style="font-size:18px;color:var(--text-dim);">⌕</span>
-                <input type="text" id="search-input" placeholder="Search players, logs, punishments..." style="flex:1;background:transparent;border:none;font-size:15px;font-family:'Syne',sans-serif;outline:none;" oninput="app.doSearch(this.value)" onkeydown="app.searchKeydown(event)">
-                <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);cursor:pointer;" onclick="app.closeSearch()">ESC</span>
+    <!-- ═══ GLOBAL SEARCH MODAL (CMD+K) ═══ -->
+    <div id="search-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)app.closeSearch()">
+        <div class="search-modal">
+            <div class="search-modal-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" id="search-input" placeholder="Search players, punishments, audit logs..." oninput="app.doSearch(this.value)" onkeydown="app.searchKeydown(event)">
+                <kbd onclick="app.closeSearch()">ESC</kbd>
             </div>
-            <div id="search-results" style="max-height:420px;overflow-y:auto;">
-                <div style="padding:24px;text-align:center;font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">// Start typing to search...</div>
+            <div id="search-results" class="search-modal-body">
+                <div class="empty-hint">Type to start searching across all tables...</div>
             </div>
         </div>
     </div>
 
-    <!-- ═══ PLAYER PROFILE MODAL ═══ -->
-    <div id="profile-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1001;align-items:center;justify-content:center;" onclick="if(event.target===this)app.closeProfileModal()">
-        <div style="width:100%;max-width:820px;max-height:90vh;background:var(--bg-panel);border:1px solid var(--border-bright);border-radius:4px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 80px rgba(0,0,0,0.6);">
-            <!-- Modal header -->
-            <div style="display:flex;align-items:center;gap:16px;padding:24px 28px;border-bottom:1px solid var(--border-dim);flex-shrink:0;">
-                <div id="modal-avatar" style="width:48px;height:48px;clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:18px;color:white;flex-shrink:0;">?</div>
-                <div style="flex:1;">
-                    <h2 id="modal-name" style="font-size:22px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px;">Loading...</h2>
-                    <div style="display:flex;gap:10px;align-items:center;">
-                        <span id="modal-uuid" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
-                        <span id="modal-status-badge"></span>
+    <!-- ═══ PROFILE MODAL ═══ -->
+    <div id="profile-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)app.closeProfileModal()">
+        <div class="profile-modal-card">
+            <div class="modal-card-header">
+                <div class="modal-player-identity">
+                    <div id="modal-avatar" class="avatar lg">A</div>
+                    <div>
+                        <h3 id="modal-name">Player</h3>
+                        <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+                            <span id="modal-uuid" class="mono text-muted" style="font-size:10px;"></span>
+                            <span id="modal-status-badge"></span>
+                        </div>
                     </div>
                 </div>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn-sm" onclick="app.modalEditPlayer()">EDIT</button>
-                    <button class="btn-sm btn-red" onclick="app.modalBanPlayer()">BAN</button>
-                    <button class="btn-sm" onclick="app.closeProfileModal()" style="color:var(--text-dim);">✕</button>
+                <div class="btn-row">
+                    <button class="btn-ghost sm" onclick="app.modalEditPlayer()">Edit</button>
+                    <button class="btn-danger-ghost sm" onclick="app.modalBanPlayer()">Sanction</button>
+                    <button class="btn-ghost sm" onclick="app.closeProfileModal()">✕</button>
                 </div>
             </div>
-            <!-- Modal body -->
-            <div style="overflow-y:auto;flex:1;padding:24px 28px;">
-                <!-- Stat strip -->
-                <div class="stat-strip-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
-                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Coins</span>
-                        <span id="modal-coins" style="font-size:20px;font-weight:800;color:var(--amber);">—</span>
-                    </div>
-                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Level</span>
-                        <span id="modal-level" style="font-size:20px;font-weight:800;color:var(--purple);">—</span>
-                    </div>
-                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Playtime</span>
-                        <span id="modal-playtime" style="font-size:20px;font-weight:800;color:var(--green);">—</span>
-                    </div>
-                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
-                        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:8px;">Sessions</span>
-                        <span id="modal-sessions" style="font-size:20px;font-weight:800;">—</span>
-                    </div>
+            <div class="modal-card-body">
+                <div class="metrics-grid mini">
+                    <div class="metric-card"><span class="metric-title">Coins</span><span class="metric-value text-gold" id="modal-coins">—</span></div>
+                    <div class="metric-card"><span class="metric-title">Level</span><span class="metric-value text-purple" id="modal-level">—</span></div>
+                    <div class="metric-card"><span class="metric-title">Playtime</span><span class="metric-value text-green" id="modal-playtime">—</span></div>
+                    <div class="metric-card"><span class="metric-title">Sessions</span><span class="metric-value" id="modal-sessions">—</span></div>
                 </div>
-                <!-- Coin history chart -->
-                <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;margin-bottom:16px;">
-                    <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Coin History</div>
-                    <div style="position:relative;height:120px;"><canvas id="modal-chart"></canvas></div>
+                <div class="panel-card" style="margin-top:16px;">
+                    <div class="panel-card-header compact"><h4>Valuation Trend</h4></div>
+                    <div style="height:120px;"><canvas id="modal-chart"></canvas></div>
                 </div>
-                <!-- Punishments + recent sessions side by side -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
-                        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Punishment History</div>
-                        <div id="modal-punishments" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</div>
+                <div class="grid-deck two-col" style="margin-top:16px;">
+                    <div class="panel-card">
+                        <div class="panel-card-header compact"><h4>Sanctions</h4></div>
+                        <div id="modal-punishments" class="striped-list"></div>
                     </div>
-                    <div style="background:var(--bg-raised);border:1px solid var(--border-dim);border-radius:4px;padding:16px;">
-                        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-secondary);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Recent Sessions</div>
-                        <div id="modal-sessions-list" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);">Loading...</div>
+                    <div class="panel-card">
+                        <div class="panel-card-header compact"><h4>Recent Sessions</h4></div>
+                        <div id="modal-sessions-list" class="striped-list"></div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ═══ CONFIRM MODAL ═══ -->
-    <div id="confirm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1002;align-items:center;justify-content:center;" onclick="if(event.target===this)app.closeConfirm()">
-        <div style="width:100%;max-width:420px;background:var(--bg-panel);border:1px solid var(--border-bright);border-radius:4px;padding:32px;box-shadow:0 40px 80px rgba(0,0,0,0.6);">
-            <h3 id="confirm-title" style="font-size:18px;font-weight:800;margin-bottom:8px;">Confirm</h3>
-            <p id="confirm-body" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--text-secondary);margin-bottom:24px;line-height:1.7;"></p>
-            <div style="display:flex;gap:10px;">
-                <button id="confirm-ok" class="btn-primary btn-red" style="width:auto;" onclick="app._confirmResolve(true)">CONFIRM</button>
-                <button class="btn-sm" style="padding:10px 20px;" onclick="app._confirmResolve(false)">CANCEL</button>
+    <!-- ═══ CONFIRM DIALOG ═══ -->
+    <div id="confirm-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)app.closeConfirm()">
+        <div class="confirm-dialog">
+            <h3 id="confirm-title">Confirm Action</h3>
+            <p id="confirm-body" class="text-muted"></p>
+            <div class="btn-row" style="margin-top:20px;justify-content:flex-end;">
+                <button class="btn-ghost" onclick="app._confirmResolve(false)">Cancel</button>
+                <button id="confirm-ok" class="btn-danger" onclick="app._confirmResolve(true)">Proceed</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Live clock
         setInterval(() => {
             const el = document.getElementById('current-time');
             if (el) el.innerText = new Date().toLocaleTimeString('en-GB');
         }, 1000);
-        // Global search shortcut
         document.addEventListener('keydown', e => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); app.openSearch(); }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); app.openSearch(); }
             if (e.key === 'Escape') { app.closeSearch(); app.closeProfileModal(); app.closeConfirm(); }
+            if (e.key.toLowerCase() === 'r' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+                e.preventDefault();
+                app.manualRefresh();
+            }
         });
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
